@@ -6,7 +6,23 @@ import Store from "electron-store";
 import { config } from "dotenv";
 
 // Load .env file for main process
-config();
+// In production, .env is in resources folder
+const envPath = app.isPackaged 
+  ? path.join(process.resourcesPath, ".env")
+  : path.join(process.cwd(), ".env");
+
+console.log("📄 Loading .env from:", envPath);
+const envResult = config({ path: envPath });
+
+// Check if .env loaded successfully
+if (envResult.error) {
+  console.error("❌ Failed to load .env file:", envResult.error.message);
+  console.error("💡 Make sure .env exists at:", envPath);
+  app.quit();
+  process.exit(1);
+}
+
+console.log("✅ .env loaded successfully");
 
 // Fix __dirname for ES modules (when needed)
 const __filename = fileURLToPath(import.meta.url);
@@ -16,7 +32,7 @@ let mainWindow: BrowserWindow | null = null;
 
 const isDevelopment = process.env.NODE_ENV === "development";
 
-// Environment configuration - loaded from .env
+// Environment configuration - loaded from .env (NO FALLBACKS!)
 const SERVER_URL = process.env.VITE_SERVER_URL;
 const SERVER_WS_URL = process.env.VITE_SERVER_WS_URL;
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
@@ -25,6 +41,25 @@ const DEV_SERVER_WS_URL = process.env.VITE_DEV_SERVER_WS_URL;
 console.log("NODE_ENV:", process.env.NODE_ENV);
 console.log("isDevelopment:", isDevelopment);
 console.log("Server URLs:", { SERVER_URL, SERVER_WS_URL });
+
+// Fail-fast: Check required env vars
+if (!SERVER_URL || !SERVER_WS_URL) {
+  console.error("❌ MISSING REQUIRED ENV VARS:");
+  console.error("   VITE_SERVER_URL:", SERVER_URL || "(MISSING)");
+  console.error("   VITE_SERVER_WS_URL:", SERVER_WS_URL || "(MISSING)");
+  console.error("\n💡 Check .env file at:", envPath);
+  app.quit();
+  process.exit(1);
+}
+
+if (isDevelopment && (!DEV_SERVER_URL || !DEV_SERVER_WS_URL)) {
+  console.error("❌ MISSING DEV ENV VARS:");
+  console.error("   VITE_DEV_SERVER_URL:", DEV_SERVER_URL || "(MISSING)");
+  console.error("   VITE_DEV_SERVER_WS_URL:", DEV_SERVER_WS_URL || "(MISSING)");
+  console.error("\n💡 Check .env file at:", envPath);
+  app.quit();
+  process.exit(1);
+}
 
 
 // Build CSP policy dynamically
@@ -37,16 +72,29 @@ const buildCSP = (): string => {
 
   // Add dev server URLs in development mode
   if (isDevelopment) {
-    connectSources.push(DEV_SERVER_URL, DEV_SERVER_WS_URL);
+    // Safe: Already validated above
+    connectSources.push(DEV_SERVER_URL!, DEV_SERVER_WS_URL!);
   }
 
+  // Filter out undefined values
+  const validSources = connectSources.filter(Boolean);
+
+  // Production needs file: protocol for local resources
+  const defaultSrc = isDevelopment ? "'self'" : "'self' file:";
+  const scriptSrc = isDevelopment 
+    ? "'self' 'unsafe-inline' 'unsafe-eval'" 
+    : "'self' 'unsafe-inline' 'unsafe-eval' file:";
+  const styleSrc = isDevelopment 
+    ? "'self' 'unsafe-inline'" 
+    : "'self' 'unsafe-inline' file:";
+
   return [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-    "style-src 'self' 'unsafe-inline'",
-    `connect-src ${connectSources.join(' ')}`,
-    "img-src 'self' data: https:",
-    "font-src 'self' data:",
+    `default-src ${defaultSrc}`,
+    `script-src ${scriptSrc}`,
+    `style-src ${styleSrc}`,
+    `connect-src ${validSources.join(' ')}`,
+    "img-src 'self' data: https: file:",
+    "font-src 'self' data: file:",
   ].join('; ') + ';';
 };
 
@@ -82,6 +130,13 @@ function createWindow() {
   // Set Content Security Policy dynamically based on environment
   const cspPolicy = buildCSP();
   console.log("📋 CSP Policy:", cspPolicy);
+  console.log("🔧 isDevelopment:", isDevelopment);
+  console.log("🌐 ENV vars:", { 
+    SERVER_URL, 
+    SERVER_WS_URL, 
+    DEV_SERVER_URL, 
+    DEV_SERVER_WS_URL 
+  });
   
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -98,11 +153,28 @@ function createWindow() {
     // Open DevTools automatically in development
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+    // Production: load from dist folder
+    const indexPath = path.join(__dirname, "../dist/index.html");
+    console.log("🚀 Loading app from:", indexPath);
+    console.log("📂 __dirname:", __dirname);
+    
+    mainWindow.loadFile(indexPath);
   }
+
+  // Debug: Open DevTools on load error
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error('❌ Failed to load:', errorCode, errorDescription);
+    mainWindow?.webContents.openDevTools({ mode: 'detach' });
+  });
+
+  // Debug: Log when DOM is ready
+  mainWindow.webContents.on('dom-ready', () => {
+    console.log('✅ DOM Ready');
+  });
 
   // Show window when ready
   mainWindow.once("ready-to-show", () => {
+    console.log("✅ Window ready to show");
     mainWindow?.show();
   });
 
