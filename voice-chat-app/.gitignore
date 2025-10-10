@@ -40,7 +40,6 @@ Thumbs.db
 
 # Electron specific
 out/
-build/
 *.dmg
 *.pkg
 *.deb
