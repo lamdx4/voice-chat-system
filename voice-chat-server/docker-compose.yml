@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: voice-chat-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass voicechat2024
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - voice-chat-network
+
+  # Optional: Redis Commander (GUI for Redis)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: voice-chat-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:voicechat2024
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - voice-chat-network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  voice-chat-network:
+    driver: bridge
+

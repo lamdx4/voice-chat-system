@@ -1,0 +1,16 @@
+# Ignore all files in resources by default
+*
+
+# But keep the directory structure
+!.gitignore
+!.gitkeep
+
+# Allow example/template files
+!configs/app-example.json
+!*-example.*
+!*-template.*
+
+# If you want to commit specific resources, use:
+# !audio/notification.mp3
+# !images/logo.png
+

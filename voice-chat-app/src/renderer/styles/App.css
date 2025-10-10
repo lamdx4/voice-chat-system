@@ -1,0 +1,4 @@
+/* Custom app styles - most styles are now handled by Tailwind and shadcn/ui */
+@layer components {
+  /* Add any custom component styles here if needed */
+}
