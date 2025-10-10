@@ -34,6 +34,11 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
 
+      - name: Force Git to use HTTPS (avoid SSH deps)
+        run: |
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+          git config --global url."https://github.com/".insteadOf git@github.com:
+
       - name: Install deps
         run: yarn install --frozen-lockfile
 
@@ -63,6 +68,10 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: 'voice-chat-app/yarn.lock'
       - run: corepack enable
+      - name: Force Git to use HTTPS (avoid SSH deps)
+        run: |
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+          git config --global url."https://github.com/".insteadOf git@github.com:
       - run: yarn install --frozen-lockfile
       - name: Build Linux (AppImage)
         run: yarn electron:build:linux
@@ -87,6 +96,10 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: 'voice-chat-app/yarn.lock'
       - run: corepack enable
+      - name: Force Git to use HTTPS (avoid SSH deps)
+        run: |
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+          git config --global url."https://github.com/".insteadOf git@github.com:
       - run: yarn install --frozen-lockfile
       - name: Build macOS (.dmg un-signed)
         run: yarn electron:build:mac
