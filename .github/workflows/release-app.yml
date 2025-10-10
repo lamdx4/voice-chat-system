@@ -2,8 +2,7 @@ name: Release App (Electron)
 
 on:
   push:
-    tags:
-      - 'app-v*'           # ví dụ: app-v1.0.0
+    tags: ['app-v*']   # ví dụ: app-v1.0.0
   workflow_dispatch: {}
 
 permissions:
@@ -38,13 +37,17 @@ jobs:
         run: |
           git config --global url."https://github.com/".insteadOf ssh://git@github.com/
           git config --global url."https://github.com/".insteadOf git@github.com:
+          git config --global url."https://github.com/".insteadOf git+ssh://git@github.com/
+
+      - name: Remove npm lockfile (optional)
+        run: |
+          [ -f package-lock.json ] && rm -f package-lock.json || true
 
       - name: Install deps
         run: yarn install --frozen-lockfile
 
       - name: Build Windows (.exe / NSIS or portable)
         run: yarn electron:build:win
-        # => tạo file trong voice-chat-app/release/**
 
       - name: Upload artifact (Win)
         uses: actions/upload-artifact@v4
@@ -59,7 +62,6 @@ jobs:
   linux:
     name: Build Linux
     runs-on: ubuntu-latest
-    needs: win
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -72,6 +74,10 @@ jobs:
         run: |
           git config --global url."https://github.com/".insteadOf ssh://git@github.com/
           git config --global url."https://github.com/".insteadOf git@github.com:
+          git config --global url."https://github.com/".insteadOf git+ssh://git@github.com/
+      - name: Remove npm lockfile (optional)
+        run: |
+          [ -f package-lock.json ] && rm -f package-lock.json || true
       - run: yarn install --frozen-lockfile
       - name: Build Linux (AppImage)
         run: yarn electron:build:linux
@@ -83,11 +89,9 @@ jobs:
             voice-chat-app/release/**/*.tar.gz
           if-no-files-found: warn
 
-  # macOS dmg (không ký)
   mac:
     name: Build macOS
     runs-on: macos-latest
-    needs: win
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -100,6 +104,10 @@ jobs:
         run: |
           git config --global url."https://github.com/".insteadOf ssh://git@github.com/
           git config --global url."https://github.com/".insteadOf git@github.com:
+          git config --global url."https://github.com/".insteadOf git+ssh://git@github.com/
+      - name: Remove npm lockfile (optional)
+        run: |
+          [ -f package-lock.json ] && rm -f package-lock.json || true
       - run: yarn install --frozen-lockfile
       - name: Build macOS (.dmg un-signed)
         run: yarn electron:build:mac
@@ -114,15 +122,13 @@ jobs:
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [win, linux, mac]   # bỏ bớt nếu bạn không build linux/mac
+    needs: [win, linux, mac]   # 👉 nếu muốn chờ cả linux/mac: [win, linux, mac]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist-release
-
       - name: Create Release & Upload assets
         uses: softprops/action-gh-release@v2
         with:
