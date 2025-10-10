@@ -1,0 +1,103 @@
+name: Release Server (ZIP)
+
+on:
+  push:
+    tags:
+      - 'server-v*'     # ví dụ: server-v1.0.0
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+    # đổi lại nếu thư mục server của bạn khác
+    working-directory: voice-chat-server
+
+env:
+  CI: true
+  NODE_ENV: production
+
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: 'voice-chat-server/yarn.lock'  # đổi nếu khác
+
+      - name: Enable Corepack (Yarn)
+        run: corepack enable
+
+      - name: Install deps
+        run: yarn install --frozen-lockfile
+
+      - name: Build (nếu dùng TypeScript)
+        run: |
+          if [ -f tsconfig.json ]; then
+            yarn build
+          fi
+
+      - name: Make runnable bundle
+        run: |
+          rm -rf bundle && mkdir -p bundle
+          # nếu đã build ra dist/, copy dist; nếu chạy ts-node thì copy src/
+          if [ -d dist ]; then
+            cp -r dist bundle/dist
+          elif [ -d src ]; then
+            cp -r src bundle/src
+          fi
+
+          # bắt buộc có để chạy: package.json + yarn.lock
+          cp package.json bundle/
+          if [ -f yarn.lock ]; then cp yarn.lock bundle/; fi
+          # env mẫu & tài liệu (không bắt buộc)
+          if [ -f .env.example ]; then cp .env.example bundle/; fi
+          if [ -f README.md ]; then cp README.md bundle/; fi
+
+          # cài production deps vào bundle (nhẹ hơn copy node_modules hiện tại)
+          cd bundle
+          yarn install --production --frozen-lockfile
+
+          # script chạy nhanh
+          echo '#!/usr/bin/env bash' > start.sh
+          echo 'DIR="$(cd "$(dirname "$0")" && pwd)"' >> start.sh
+          echo 'cd "$DIR"' >> start.sh
+          # ưu tiên dist nếu có, fallback src (ts-node)
+          echo 'if [ -d dist ]; then node dist/app.js; else node src/app.js; fi' >> start.sh
+          chmod +x start.sh
+          cd ..
+
+      - name: Create ZIP
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          OUT="voice-chat-server-${TAG}.zip"
+          cd bundle
+          zip -r "../$OUT" . >/dev/null
+          cd ..
+          echo "ZIP_FILE=$OUT" >> $GITHUB_ENV
+
+      - name: Upload artifact (CI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-zip
+          path: |
+            voice-chat-server/${{ env.ZIP_FILE }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            voice-chat-server/${{ env.ZIP_FILE }}
