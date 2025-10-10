@@ -102,7 +102,7 @@ export function Dashboard() {
               <div>
                 <p className="text-muted-foreground">Server</p>
                 <p className="font-mono font-semibold">
-                  {import.meta.env.VITE_SERVER_URL || 'http://localhost:3000'}
+                  {import.meta.env.VITE_SERVER_URL || 'None'}
                 </p>
               </div>
               <div>

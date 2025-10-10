@@ -3,6 +3,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import Store from "electron-store";
+import { config } from "dotenv";
+
+// Load .env file for main process
+config();
 
 // Fix __dirname for ES modules (when needed)
 const __filename = fileURLToPath(import.meta.url);
@@ -12,15 +16,16 @@ let mainWindow: BrowserWindow | null = null;
 
 const isDevelopment = process.env.NODE_ENV === "development";
 
-// Environment configuration with defaults
-const SERVER_URL = process.env.VITE_SERVER_URL || 'http://localhost:3000';
-const SERVER_WS_URL = process.env.VITE_SERVER_WS_URL || 'ws://localhost:3000';
-const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
-const DEV_SERVER_WS_URL = process.env.VITE_DEV_SERVER_WS_URL || 'ws://localhost:5173';
+// Environment configuration - loaded from .env
+const SERVER_URL = process.env.VITE_SERVER_URL;
+const SERVER_WS_URL = process.env.VITE_SERVER_WS_URL;
+const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+const DEV_SERVER_WS_URL = process.env.VITE_DEV_SERVER_WS_URL;
 
 console.log("NODE_ENV:", process.env.NODE_ENV);
 console.log("isDevelopment:", isDevelopment);
 console.log("Server URLs:", { SERVER_URL, SERVER_WS_URL });
+
 
 // Build CSP policy dynamically
 const buildCSP = (): string => {
