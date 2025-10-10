@@ -1,0 +1,121 @@
+name: Release App (Electron)
+
+on:
+  push:
+    tags:
+      - 'app-v*'           # ví dụ: app-v1.0.0
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+    working-directory: voice-chat-app
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: false
+  CI: true
+
+jobs:
+  win:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: 'voice-chat-app/yarn.lock'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install deps
+        run: yarn install --frozen-lockfile
+
+      - name: Build Windows (.exe / NSIS or portable)
+        run: yarn electron:build:win
+        # => tạo file trong voice-chat-app/release/**
+
+      - name: Upload artifact (Win)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-win
+          path: |
+            voice-chat-app/release/**/*.exe
+            voice-chat-app/release/**/*.zip
+            voice-chat-app/release/**/*.7z
+          if-no-files-found: warn
+
+  linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    needs: win
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: 'voice-chat-app/yarn.lock'
+      - run: corepack enable
+      - run: yarn install --frozen-lockfile
+      - name: Build Linux (AppImage)
+        run: yarn electron:build:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-linux
+          path: |
+            voice-chat-app/release/**/*.AppImage
+            voice-chat-app/release/**/*.tar.gz
+          if-no-files-found: warn
+
+  # macOS dmg (không ký)
+  mac:
+    name: Build macOS
+    runs-on: macos-latest
+    needs: win
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: 'voice-chat-app/yarn.lock'
+      - run: corepack enable
+      - run: yarn install --frozen-lockfile
+      - name: Build macOS (.dmg un-signed)
+        run: yarn electron:build:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-mac
+          path: |
+            voice-chat-app/release/**/*.dmg
+            voice-chat-app/release/**/*.zip
+          if-no-files-found: warn
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [win, linux, mac]   # bỏ bớt nếu bạn không build linux/mac
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-release
+
+      - name: Create Release & Upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            dist-release/**/*
