@@ -43,8 +43,15 @@ class SocketService {
   }
 
   connect() {
-    if (this.socket?.connected) {
-      console.log('✅ Socket already connected');
+    // If already have a socket instance, don't recreate
+    if (this.socket) {
+      if (this.socket.connected) {
+        console.log('✅ Socket already connected');
+        return;
+      }
+      // Socket exists but disconnected - reconnect it
+      console.log('🔄 Reconnecting existing socket...');
+      this.socket.connect();
       return;
     }
 
@@ -71,7 +78,7 @@ class SocketService {
       return;
     }
 
-    console.log('🔌 Connecting to server:', this.serverUrl);
+    console.log('🔌 Creating new socket connection to:', this.serverUrl);
     console.log('📤 Auth data:', { userId: userId.substring(0, 8) + '...', name });
 
     this.socket = io(this.serverUrl, {
@@ -107,14 +114,34 @@ class SocketService {
       this.getOnlineUsers();
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('❌ Disconnected from server');
+    this.socket.on('reconnect', (attemptNumber: number) => {
+      console.log('🔄 Reconnected to server after', attemptNumber, 'attempts');
+      useVoiceChatStore.getState().setSocketConnected(true);
+      
+      // Get initial data after reconnect
+      this.getRooms();
+      this.getOnlineUsers();
+    });
+
+    this.socket.on('disconnect', (reason: string) => {
+      console.log('❌ Disconnected from server. Reason:', reason);
       useVoiceChatStore.getState().setSocketConnected(false);
     });
 
-    this.socket.on('connect_error', (error) => {
-      console.error('Connection error:', error);
-      useVoiceChatStore.getState().setSocketConnected(false);
+    this.socket.on('connect_error', (error: Error) => {
+      console.error('❌ Connection error:', error.message);
+    });
+
+    this.socket.on('reconnect_attempt', (attemptNumber: number) => {
+      console.log('🔄 Attempting to reconnect... (attempt', attemptNumber, ')');
+    });
+
+    this.socket.on('reconnect_error', (error: Error) => {
+      console.error('❌ Reconnection error:', error.message);
+    });
+
+    this.socket.on('reconnect_failed', () => {
+      console.error('❌ Failed to reconnect after all attempts');
     });
 
     // Room events
@@ -224,12 +251,18 @@ class SocketService {
       console.log('📞 Incoming call (new):', data);
       const store = useVoiceChatStore.getState();
       
-      store.setIncomingCallNew({
+      const incomingCall = {
         callId: data.callId,
         fromUserId: data.from,
         fromUserName: data.fromName,
         receivedAt: Date.now(),
-      });
+      };
+      
+      console.log('📞 Setting incoming call to store:', incomingCall);
+      store.setIncomingCallNew(incomingCall);
+      
+      // Verify it was set
+      console.log('📞 Incoming call state after set:', store.incomingCallNew);
     });
 
     this.socket.on('callAcceptedNew', (data: CallAcceptedEventNew) => {

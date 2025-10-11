@@ -96,9 +96,33 @@ export function IncomingCall() {
   const activeCall = incomingCallNew || incomingCall;
   const isDirectCall = !!incomingCallNew;
 
+  // Debug log
+  console.log('🔔 IncomingCall component render:', {
+    hasIncomingCallNew: !!incomingCallNew,
+    hasIncomingCall: !!incomingCall,
+    hasActiveCall: !!activeCall,
+    isDirectCall,
+    callFrom: activeCall?.fromUserName,
+  });
+
   useEffect(() => {
     if (activeCall) {
       console.log('📞 Incoming call from:', activeCall.fromUserName);
+      
+      // Safety check: If call is too old (> 60 seconds), auto-clear it
+      // Only applies to direct calls which have receivedAt
+      if ('receivedAt' in activeCall) {
+        const callAge = Date.now() - activeCall.receivedAt;
+        if (callAge > 60000) {
+          console.warn('⚠️ Stale incoming call detected (age:', callAge, 'ms). Auto-clearing...');
+          if (isDirectCall) {
+            setIncomingCallNew(null);
+          } else {
+            setIncomingCall(null);
+          }
+          return;
+        }
+      }
       
       // Create and play ringtone
       if (!ringtoneRef.current) {
@@ -118,7 +142,7 @@ export function IncomingCall() {
         ringtoneRef.current.stop();
       }
     };
-  }, [activeCall]);
+  }, [activeCall, isDirectCall, setIncomingCallNew, setIncomingCall]);
 
   const handleAccept = async () => {
     if (!activeCall || isProcessing) return;
@@ -133,6 +157,9 @@ export function IncomingCall() {
     if (isDirectCall && incomingCallNew) {
       // Direct call flow
       console.log('📞 Accepting direct call...', incomingCallNew.callId);
+      
+      // Clear incoming call IMMEDIATELY to dismiss dialog
+      setIncomingCallNew(null);
       
       socketService.acceptCallNew(incomingCallNew.callId, async (response) => {
         if (!response.success) {
@@ -158,9 +185,6 @@ export function IncomingCall() {
 
         console.log('✅ Joined room successfully');
         setCurrentRoom(joinResponse.room);
-        
-        // Clear incoming call
-        setIncomingCallNew(null);
         setIsProcessing(false);
       });
     } else if (incomingCall) {
@@ -201,11 +225,13 @@ export function IncomingCall() {
       // Direct call flow
       console.log('❌ Rejecting direct call:', incomingCallNew.callId);
       
+      // Clear dialog IMMEDIATELY
+      setIncomingCallNew(null);
+      
       socketService.rejectCallNew(incomingCallNew.callId, 'User declined', (response) => {
         if (response.success) {
           console.log('✅ Call rejected');
         }
-        setIncomingCallNew(null);
         setIsProcessing(false);
       });
     } else if (incomingCall) {
