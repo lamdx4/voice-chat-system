@@ -86,6 +86,9 @@
         "filter": [
           "**/*"
         ]
+      },{
+        "from" : ".env",
+        "to" : ".env"
       }
     ],
     "asar": true,
