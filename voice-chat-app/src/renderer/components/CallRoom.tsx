@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -126,31 +126,40 @@ export function CallRoom() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleToggleMute = () => {
+  const handleToggleMute = async () => {
     const newMuted = !isMuted;
     webrtcService.muteAudio(newMuted);
     setMuted(newMuted);
+    
+    // Broadcast media state to other participants
+    if (currentRoom) {
+      await socketService.updateMediaState(currentRoom.roomId, newMuted, isVideoEnabled);
+    }
   };
 
   const handleToggleVideo = async () => {
     const newVideoEnabled = !isVideoEnabled;
     
-    if (newVideoEnabled) {
-      try {
-        const stream = await webrtcService.getUserMedia(false, true);
-        const videoTrack = stream.getVideoTracks()[0];
-        if (videoTrack) {
-          await webrtcService.produce(videoTrack);
-        }
-      } catch (error) {
-        console.error('Error enabling video:', error);
-        return;
+    try {
+      if (newVideoEnabled) {
+        // Start or resume video
+        await webrtcService.resumeOrStartVideo();
+      } else {
+        // Stop video completely (stop track and close producer)
+        await webrtcService.stopVideo();
       }
-    } else {
-      webrtcService.enableVideo(false);
+      
+      setVideoEnabled(newVideoEnabled);
+      
+      // Broadcast media state to other participants
+      if (currentRoom) {
+        await socketService.updateMediaState(currentRoom.roomId, isMuted, newVideoEnabled);
+      }
+    } catch (error) {
+      console.error('Error toggling video:', error);
+      // Revert state on error
+      setVideoEnabled(!newVideoEnabled);
     }
-    
-    setVideoEnabled(newVideoEnabled);
   };
 
   const handleLeaveCall = async () => {
@@ -241,6 +250,8 @@ export function CallRoom() {
       currentUserName={currentUserName}
       isMuted={isMuted}
       isVideoEnabled={isVideoEnabled}
+      localAudioTrack={localAudioTrack}
+      localVideoTrack={localVideoTrack}
       messages={messages}
       messageInput={messageInput}
       setMessageInput={setMessageInput}
@@ -395,6 +406,8 @@ function DirectCallLayout({
   currentUserName,
   isMuted, 
   isVideoEnabled,
+  localAudioTrack,
+  localVideoTrack,
   messages,
   messageInput,
   setMessageInput,
@@ -466,6 +479,8 @@ function DirectCallLayout({
                 <ParticipantCard
                   name={remoteUser?.name || 'Connecting...'}
                   isLocal={false}
+                  isMuted={remoteUser?.isMuted}
+                  isVideoEnabled={remoteUser?.isVideoEnabled}
                   audioTrack={remoteUser?.audioTrack}
                   videoTrack={remoteUser?.videoTrack}
                 />
@@ -480,8 +495,8 @@ function DirectCallLayout({
                   isLocal={true}
                   isMuted={isMuted}
                   isVideoEnabled={isVideoEnabled}
-                  audioTrack={localUser?.audioTrack}
-                  videoTrack={localUser?.videoTrack}
+                  audioTrack={localAudioTrack || undefined}
+                  videoTrack={localVideoTrack || undefined}
                 />
               </CardContent>
             </Card>
@@ -558,14 +573,14 @@ interface ParticipantCardProps {
   videoTrack?: MediaStreamTrack;
 }
 
-function ParticipantCard({
+const ParticipantCard = React.memo(({
   name,
   isLocal = false,
   isMuted = false,
   isVideoEnabled = false,
   audioTrack,
   videoTrack,
-}: ParticipantCardProps) {
+}: ParticipantCardProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -709,10 +724,24 @@ function ParticipantCard({
       .slice(0, 2);
   };
 
+  // Debug log
+  console.log(`👤 ParticipantCard render:`, {
+    name,
+    isLocal,
+    isVideoEnabled,
+    hasVideoTrack: Boolean(videoTrack),
+    videoTrackId: videoTrack?.id,
+  });
+
+  // Simple and clear logic:
+  // Show video if there's a video track (the actual media stream)
+  // This is the source of truth - if track exists, video is streaming
+  const shouldShowVideo = Boolean(videoTrack);
+
   return (
     <Card className="relative overflow-hidden shadow-lg border-2">
       <CardContent className="p-0 aspect-video flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
-        {videoTrack || (isLocal && isVideoEnabled) ? (
+        {shouldShowVideo ? (
           <video
             ref={videoRef}
             autoPlay
@@ -732,25 +761,35 @@ function ParticipantCard({
         {/* Audio element for remote participants */}
         {!isLocal && audioTrack && <audio ref={audioRef} autoPlay />}
 
-        {/* Name and status overlay */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm text-white drop-shadow-lg">{name}</span>
+        {/* Name and status overlay - Fixed positioning with proper padding */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+          <div className="flex items-center justify-between gap-2">
+            {/* Name section - flexible width */}
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="font-semibold text-sm text-white drop-shadow-lg truncate">{name}</span>
               {isLocal && (
-                <Badge className="text-xs px-2 py-0.5 bg-white/90 text-blue-700 border-0">
+                <Badge className="text-xs px-2 py-0.5 bg-white/90 text-blue-700 border-0 flex-shrink-0">
                   You
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              {isMuted && (
+            
+            {/* Icons section - fixed width, no overflow */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Video state indicator */}
+              {!isVideoEnabled && (
+                <div className="bg-gray-700/90 rounded-full p-1.5 shadow-lg">
+                  <VideoOff className="w-3.5 h-3.5 text-white" />
+                </div>
+              )}
+              
+              {/* Audio state indicator */}
+              {isMuted ? (
                 <div className="bg-red-500 rounded-full p-1.5 shadow-lg">
                   <MicOff className="w-3.5 h-3.5 text-white" />
                 </div>
-              )}
-              {!isMuted && isLocal && (
-                <div className="bg-green-500 rounded-full p-1.5 shadow-lg animate-pulse">
+              ) : (
+                <div className="bg-green-500/90 rounded-full p-1.5 shadow-lg">
                   <Mic className="w-3.5 h-3.5 text-white" />
                 </div>
               )}
@@ -760,5 +799,7 @@ function ParticipantCard({
       </CardContent>
     </Card>
   );
-}
+});
+
+ParticipantCard.displayName = 'ParticipantCard';
 

@@ -40,6 +40,11 @@ export interface RoomParticipant {
   consumerTransportId?: string;
   producers: Map<string, types.Producer>; // kind -> producer
   consumers: Map<string, types.Consumer>; // producerId -> consumer
+  
+  // Media state
+  isMuted: boolean;
+  isVideoEnabled: boolean;
+  mediaStateUpdatedAt: number;
 }
 
 export interface Room {

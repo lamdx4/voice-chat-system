@@ -47,9 +47,13 @@ export default defineConfig({
     emptyOutDir: true
   },
   server: {
+    host: true, // Expose to network (0.0.0.0) - allows browser access
     port: 5173,
     strictPort: true,
-    allowedHosts : true
+    allowedHosts: true,
+    // For getUserMedia to work in browser, you need HTTPS or localhost
+    // If accessing from other devices, uncomment https below:
+    // https: true, // Enable self-signed certificate for HTTPS
   }
 });
 

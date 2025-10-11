@@ -197,6 +197,17 @@ class SocketService {
       }
     });
 
+    this.socket.on('participantMediaStateUpdated', (data: { userId: string; name: string; isMuted: boolean; isVideoEnabled: boolean }) => {
+      console.log('🎙️📹 Participant media state updated:', data);
+      const store = useVoiceChatStore.getState();
+      
+      // Update participant's media state
+      store.updateParticipant(data.userId, {
+        isMuted: data.isMuted,
+        isVideoEnabled: data.isVideoEnabled,
+      });
+    });
+
     this.socket.on('roomListUpdated', (data: RoomListUpdatedEvent) => {
       console.log('🏠 Room list updated:', data.rooms.length, 'rooms');
       useVoiceChatStore.getState().setAvailableRooms(data.rooms);
@@ -348,6 +359,21 @@ class SocketService {
       this.socket.emit('leaveRoom', payload, (response: any) => {
         console.log('Leave room response:', response);
         resolve(response);
+      });
+    });
+  }
+
+  updateMediaState(roomId: string, isMuted: boolean, isVideoEnabled: boolean): Promise<{ success: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      if (!this.socket) {
+        resolve({ success: false, error: 'Not connected' });
+        return;
+      }
+
+      console.log('📤 Updating media state:', { roomId, isMuted, isVideoEnabled });
+      this.socket.emit('mediaStateChanged', { roomId, isMuted, isVideoEnabled }, (response: any) => {
+        console.log('Media state update response:', response);
+        resolve(response || { success: true });
       });
     });
   }

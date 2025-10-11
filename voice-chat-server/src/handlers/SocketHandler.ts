@@ -100,6 +100,9 @@ class SocketHandler {
       this.handleConsume(socket);
       this.handleResumeConsumer(socket);
       
+      // Media state handlers
+      this.handleMediaStateChanged(socket, io);
+      
       this.handleDisconnect(socket, io);
     });
   }
@@ -260,6 +263,28 @@ class SocketHandler {
             }
           }
         }
+
+        // Send existing participants' media state to the new user
+        console.log(`📤 Sending media states to ${name}`);
+        for (const [participantId, participant] of room.participants.entries()) {
+          if (participantId !== userId) {
+            console.log(`  📤 Media state of ${participant.name}:`, { isMuted: participant.isMuted, isVideoEnabled: participant.isVideoEnabled });
+            socket.emit('participantMediaStateUpdated', {
+              userId: participantId,
+              name: participant.name,
+              isMuted: participant.isMuted,
+              isVideoEnabled: participant.isVideoEnabled,
+            });
+          }
+        }
+
+        // Broadcast new user's media state to existing participants
+        socket.to(roomId).emit('participantMediaStateUpdated', {
+          userId,
+          name,
+          isMuted: false, // Default values
+          isVideoEnabled: false,
+        });
 
         callback({
           success: true,
@@ -993,6 +1018,58 @@ class SocketHandler {
       } catch (error: any) {
         console.error('Error resuming consumer:', error);
         callback({
+          success: false,
+          error: error.message,
+        });
+      }
+    });
+  }
+
+  private handleMediaStateChanged(socket: Socket, _io: Server): void {
+    socket.on('mediaStateChanged', async (payload: { roomId: string; isMuted: boolean; isVideoEnabled: boolean }, callback) => {
+      try {
+        const { userId, name } = socket.data;
+        const { roomId, isMuted, isVideoEnabled } = payload;
+
+        console.log(`🎙️📹 Media state changed for ${name}:`, { isMuted, isVideoEnabled });
+
+        const room = await RoomManager.getRoom(roomId);
+        if (!room) {
+          return callback?.({
+            success: false,
+            error: 'Room not found',
+          });
+        }
+
+        const participant = room.participants.get(userId);
+        if (!participant) {
+          return callback?.({
+            success: false,
+            error: 'Participant not found',
+          });
+        }
+
+        // Update participant media state
+        participant.isMuted = isMuted;
+        participant.isVideoEnabled = isVideoEnabled;
+        participant.mediaStateUpdatedAt = Date.now();
+
+        console.log(`✅ Updated media state for ${name} in room ${roomId}`);
+
+        // Broadcast to other participants in room
+        socket.to(roomId).emit('participantMediaStateUpdated', {
+          userId,
+          name,
+          isMuted,
+          isVideoEnabled,
+        });
+
+        callback?.({
+          success: true,
+        });
+      } catch (error: any) {
+        console.error('❌ Error updating media state:', error);
+        callback?.({
           success: false,
           error: error.message,
         });

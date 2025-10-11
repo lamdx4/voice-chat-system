@@ -59,6 +59,10 @@ class RoomManager {
       status: 'accepted',
       producers: new Map(),
       consumers: new Map(),
+      // Media state - default to unmuted audio, video off
+      isMuted: false,
+      isVideoEnabled: false,
+      mediaStateUpdatedAt: Date.now(),
     };
 
     room.participants.set(hostId, hostParticipant);
@@ -126,6 +130,10 @@ class RoomManager {
       status: room.roomType === RoomType.DIRECT ? 'pending' : 'accepted',
       producers: new Map(),
       consumers: new Map(),
+      // Media state - default to unmuted audio, video off
+      isMuted: false,
+      isVideoEnabled: false,
+      mediaStateUpdatedAt: Date.now(),
     };
 
     room.participants.set(userId, participant);
@@ -191,6 +199,10 @@ class RoomManager {
         status: 'accepted',
         producers: new Map(),
         consumers: new Map(),
+        // Media state - default to unmuted audio, video off
+        isMuted: false,
+        isVideoEnabled: false,
+        mediaStateUpdatedAt: Date.now(),
       };
       room.participants.set(userId, participant);
     } else {
@@ -492,6 +504,9 @@ class RoomManager {
             consumerTransportId: p.consumerTransportId,
             producers: new Map(),
             consumers: new Map(),
+            isMuted: (p as any).isMuted ?? false,
+            isVideoEnabled: (p as any).isVideoEnabled ?? false,
+            mediaStateUpdatedAt: (p as any).mediaStateUpdatedAt ?? Date.now(),
           },
         ])
       ),

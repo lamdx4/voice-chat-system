@@ -242,8 +242,10 @@ export class WebRTCService {
       const store = useVoiceChatStore.getState();
       if (track.kind === 'audio') {
         store.setLocalAudioTrack(track);
+        console.log('  ✅ Audio track set to store:', track.id);
       } else if (track.kind === 'video') {
         store.setLocalVideoTrack(track);
+        console.log('  ✅ Video track set to store:', track.id);
       }
 
       console.log(`✅ ${track.kind} producer created:`, producer.id);
@@ -404,6 +406,17 @@ export class WebRTCService {
     try {
       console.log('🎥 Getting user media...', { audio, video });
       
+      // Check if getUserMedia is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const errorMsg = 'getUserMedia is not available. This may be because:\n' +
+          '1. You are accessing via HTTP (not HTTPS) on a non-localhost domain\n' +
+          '2. Your browser does not support getUserMedia\n' +
+          '3. Browser permissions are blocked\n\n' +
+          'Solution: Access via https:// or http://localhost:5173/';
+        console.error('❌', errorMsg);
+        throw new Error(errorMsg);
+      }
+      
       // ===== OPTIMIZED AUDIO CONSTRAINTS =====
       const audioConstraints: MediaTrackConstraints | boolean = audio ? {
         // WebRTC Audio Processing Module (APM)
@@ -487,6 +500,59 @@ export class WebRTCService {
         videoProducer.pause();
       }
       useVoiceChatStore.getState().setVideoEnabled(enabled);
+    }
+  }
+
+  // Stop video and close producer
+  async stopVideo() {
+    console.log('🛑 Stopping video...');
+    const videoProducer = Array.from(this.producers.values()).find(p => p.kind === 'video');
+    if (videoProducer) {
+      // Get and stop the track
+      const track = videoProducer.track;
+      if (track) {
+        track.stop();
+        console.log('  ✅ Video track stopped');
+      }
+      
+      // Close the producer
+      videoProducer.close();
+      this.producers.delete(videoProducer.id);
+      console.log('  ✅ Video producer closed');
+      
+      // Clear local video track from store
+      useVoiceChatStore.getState().setLocalVideoTrack(null);
+      useVoiceChatStore.getState().setVideoEnabled(false);
+    }
+  }
+
+  // Resume or start video
+  async resumeOrStartVideo() {
+    console.log('▶️ Resuming or starting video...');
+    const videoProducer = Array.from(this.producers.values()).find(p => p.kind === 'video');
+    
+    if (videoProducer && !videoProducer.closed) {
+      // Resume existing producer
+      console.log('  ↩️ Resuming existing video producer');
+      videoProducer.resume();
+      
+      // Re-set track to store (in case it was cleared)
+      const track = videoProducer.track;
+      if (track) {
+        useVoiceChatStore.getState().setLocalVideoTrack(track);
+        console.log('  ✅ Video track restored to store');
+      }
+      
+      useVoiceChatStore.getState().setVideoEnabled(true);
+    } else {
+      // Create new producer
+      console.log('  🆕 Creating new video producer');
+      const stream = await this.getUserMedia(false, true);
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        await this.produce(videoTrack);
+        useVoiceChatStore.getState().setVideoEnabled(true);
+      }
     }
   }
 
