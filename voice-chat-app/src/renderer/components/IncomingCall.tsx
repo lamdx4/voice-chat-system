@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -10,77 +10,9 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useVoiceChatStore } from '@/stores/voiceChatStore';
 import { socketService } from '@/services/socket';
+import { audioService } from '@/services/audioService';
 import { Phone, PhoneOff } from 'lucide-react';
 import { toast } from 'sonner';
-
-// Create ringtone using Web Audio API
-const createRingtone = () => {
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-  let oscillator: OscillatorNode | null = null;
-  let gainNode: GainNode | null = null;
-  let intervalId: NodeJS.Timeout | null = null;
-
-  const play = () => {
-    // Stop if already playing
-    stop();
-
-    // Create oscillator for ringtone
-    const playTone = () => {
-      oscillator = audioContext.createOscillator();
-      gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      // Ringtone pattern: two short beeps
-      oscillator.frequency.value = 800; // Hz
-      gainNode.gain.value = 0.3;
-      oscillator.type = 'sine';
-      
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.2);
-      
-      setTimeout(() => {
-        oscillator = audioContext.createOscillator();
-        gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.frequency.value = 800;
-        gainNode.gain.value = 0.3;
-        oscillator.type = 'sine';
-        
-        oscillator.start();
-        oscillator.stop(audioContext.currentTime + 0.2);
-      }, 300);
-    };
-
-    // Play pattern every 2 seconds
-    playTone();
-    intervalId = setInterval(playTone, 2000);
-  };
-
-  const stop = () => {
-    if (intervalId) {
-      clearInterval(intervalId);
-      intervalId = null;
-    }
-    if (oscillator) {
-      try {
-        oscillator.stop();
-      } catch (e) {
-        // Already stopped
-      }
-      oscillator = null;
-    }
-    if (gainNode) {
-      gainNode = null;
-    }
-  };
-
-  return { play, stop };
-};
 
 export function IncomingCall() {
   // Support both direct calls (new) and group calls (old)
@@ -89,7 +21,6 @@ export function IncomingCall() {
   const setIncomingCallNew = useVoiceChatStore((state) => state.setIncomingCallNew);
   const setIncomingCall = useVoiceChatStore((state) => state.setIncomingCall);
   const setCurrentRoom = useVoiceChatStore((state) => state.setCurrentRoom);
-  const ringtoneRef = useRef<ReturnType<typeof createRingtone> | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Use whichever call is active
@@ -124,23 +55,16 @@ export function IncomingCall() {
         }
       }
       
-      // Create and play ringtone
-      if (!ringtoneRef.current) {
-        ringtoneRef.current = createRingtone();
-      }
-      ringtoneRef.current.play();
+      // Play incoming ringtone
+      audioService.playIncomingRingtone();
     } else {
       // Stop ringtone when call ends
-      if (ringtoneRef.current) {
-        ringtoneRef.current.stop();
-      }
+      audioService.stopIncomingRingtone();
     }
 
     // Cleanup on unmount
     return () => {
-      if (ringtoneRef.current) {
-        ringtoneRef.current.stop();
-      }
+      audioService.stopIncomingRingtone();
     };
   }, [activeCall, isDirectCall, setIncomingCallNew, setIncomingCall]);
 
@@ -150,9 +74,7 @@ export function IncomingCall() {
     setIsProcessing(true);
 
     // Stop ringtone
-    if (ringtoneRef.current) {
-      ringtoneRef.current.stop();
-    }
+    audioService.stopIncomingRingtone();
 
     if (isDirectCall && incomingCallNew) {
       // Direct call flow
@@ -217,9 +139,7 @@ export function IncomingCall() {
     setIsProcessing(true);
 
     // Stop ringtone
-    if (ringtoneRef.current) {
-      ringtoneRef.current.stop();
-    }
+    audioService.stopIncomingRingtone();
 
     if (isDirectCall && incomingCallNew) {
       // Direct call flow

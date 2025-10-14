@@ -1,5 +1,21 @@
 /// <reference types="vite/client" />
 
+// Audio file imports
+declare module '*.m4a' {
+  const src: string;
+  export default src;
+}
+
+declare module '*.mp3' {
+  const src: string;
+  export default src;
+}
+
+declare module '*.wav' {
+  const src: string;
+  export default src;
+}
+
 // Environment Variables
 interface ImportMetaEnv {
   readonly VITE_SERVER_URL: string;

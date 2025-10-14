@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Phone, PhoneOff } from 'lucide-react';
 import { useVoiceChatStore } from '../stores/voiceChatStore';
 import { socketService } from '../services/socket';
+import { audioService } from '../services/audioService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
@@ -14,6 +15,20 @@ export default function OutgoingCall() {
 
   const [secondsElapsed, setSecondsElapsed] = useState(0);
 
+  // Play/stop outgoing call sound
+  useEffect(() => {
+    if (outgoingCall) {
+      audioService.playOutgoingCallSound();
+    } else {
+      audioService.stopOutgoingCallSound();
+    }
+
+    return () => {
+      audioService.stopOutgoingCallSound();
+    };
+  }, [outgoingCall]);
+
+  // Update elapsed time
   useEffect(() => {
     if (!outgoingCall) {
       setSecondsElapsed(0);
@@ -32,6 +47,9 @@ export default function OutgoingCall() {
     if (!outgoingCall) return;
 
     console.log(`🚫 Cancelling call ${outgoingCall.callId}`);
+
+    // Stop outgoing sound
+    audioService.stopOutgoingCallSound();
 
     // Clear timeout
     clearCallTimeout();
