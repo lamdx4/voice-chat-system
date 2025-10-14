@@ -20,3 +20,6 @@ sudo tee /etc/avahi/services/call.service >/dev/null <<'XML'
 </service-group>
 XML
 sudo systemctl restart avahi-daemon
+
+
+sudo nano /etc/avahi/avahi-daemon.conf  
