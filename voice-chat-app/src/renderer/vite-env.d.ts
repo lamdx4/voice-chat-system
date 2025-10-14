@@ -40,6 +40,8 @@ interface ElectronStore {
 
 interface ElectronAPI {
   store: ElectronStore;
+  notifyIncomingCall: (callerName: string, callType: 'direct' | 'group') => void;
+  showWindow: () => void;
 }
 
 interface Versions {

@@ -57,6 +57,14 @@ export function IncomingCall() {
       
       // Play incoming ringtone
       audioService.playIncomingRingtone();
+
+      // Notify Electron main process to show notification and bring window to front
+      if (window.electronAPI) {
+        window.electronAPI.notifyIncomingCall(
+          activeCall.fromUserName,
+          isDirectCall ? 'direct' : 'group'
+        );
+      }
     } else {
       // Stop ringtone when call ends
       audioService.stopIncomingRingtone();

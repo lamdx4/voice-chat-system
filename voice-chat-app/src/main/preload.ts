@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-// Expose electron-store API
+// Expose electron-store API and notification methods
 contextBridge.exposeInMainWorld('electronAPI', {
   store: {
     get: (key: string) => ipcRenderer.invoke('store:get', key),
@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clear: () => ipcRenderer.invoke('store:clear'),
     has: (key: string) => ipcRenderer.invoke('store:has', key),
   },
+  // Notification and window control
+  notifyIncomingCall: (callerName: string, callType: 'direct' | 'group') => 
+    ipcRenderer.send('incoming-call', { callerName, callType }),
+  showWindow: () => ipcRenderer.send('show-window'),
 });
 
 // You can also expose Node.js APIs here if needed
