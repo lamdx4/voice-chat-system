@@ -1,6 +1,6 @@
 {
   "name": "voice-chat-app",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "A modern voice chat application built with Electron, React, and TypeScript",
   "main": "dist-electron/main.js",
   "author": {
