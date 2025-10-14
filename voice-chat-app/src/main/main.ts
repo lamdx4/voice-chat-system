@@ -118,11 +118,17 @@ function createWindow() {
     Menu.setApplicationMenu(null);
   }
 
+  // Set app icon
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, "assets/icon.png")
+    : path.join(__dirname, "../../assets/icon.png");
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    icon: iconPath, // Set window icon
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -217,35 +223,30 @@ function createWindow() {
 
 function createTray() {
   // Try to load tray icon from assets
-  let trayIcon;
-  const iconPaths = [
-    path.join(__dirname, "../assets/tray-icon.png"),
-    path.join(__dirname, "../../assets/tray-icon.png"),
+  const trayIconPaths = [
+    // Production: resources folder
     path.join(process.resourcesPath, "assets/tray-icon.png"),
+    // Development: project root assets folder
+    path.join(__dirname, "../../assets/tray-icon.png"),
+    // Fallback: dist-electron parent
+    path.join(__dirname, "../assets/tray-icon.png"),
   ];
 
   // Try each path
-  let iconPath = iconPaths.find((p) => fs.existsSync(p));
+  const trayIconPath = trayIconPaths.find((p) => fs.existsSync(p));
 
-  if (iconPath) {
-    console.log("📌 Using tray icon from:", iconPath);
-    trayIcon = nativeImage.createFromPath(iconPath);
-  } else {
-    console.log("⚠️ Tray icon not found, using fallback");
-    // Create a simple colored square as fallback (16x16)
-    // On macOS, we can use template image
-    if (process.platform === "darwin") {
-      // macOS: Use system icon
-      trayIcon = nativeImage.createEmpty();
-    } else {
-      // Windows/Linux: Create a simple placeholder
-      trayIcon = nativeImage.createEmpty();
+  let trayIcon;
+  if (trayIconPath) {
+    console.log("📌 Using tray icon from:", trayIconPath);
+    trayIcon = nativeImage.createFromPath(trayIconPath);
+    
+    // Resize for optimal tray display (16x16 for best results)
+    if (!trayIcon.isEmpty()) {
+      trayIcon = trayIcon.resize({ width: 16, height: 16 });
     }
-  }
-
-  // Resize for optimal display
-  if (!trayIcon.isEmpty()) {
-    trayIcon = trayIcon.resize({ width: 16, height: 16 });
+  } else {
+    console.log("⚠️ Tray icon not found, using empty icon");
+    trayIcon = nativeImage.createEmpty();
   }
 
   tray = new Tray(trayIcon);

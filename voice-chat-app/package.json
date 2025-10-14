@@ -86,7 +86,15 @@
         "filter": [
           "**/*"
         ]
-      },{
+      },
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from" : ".env",
         "to" : ".env"
       }
