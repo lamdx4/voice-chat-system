@@ -12,6 +12,7 @@ import { RoomType, ChatMessage } from '@/types';
 import { ResizableSidePanel } from './ResizableSidePanel';
 import { ParticipantGrid } from './ParticipantGrid';
 import { ParticipantSidebar } from './ParticipantSidebar';
+import { DeviceSelector } from './DeviceSelector';
 import {
   Mic,
   MicOff,
@@ -201,6 +202,27 @@ export function CallRoom() {
     });
   };
 
+  const handleMicrophoneChange = async (deviceId: string | null) => {
+    try {
+      console.log('🎤 Changing microphone device:', deviceId);
+      await webrtcService.switchMicrophone(deviceId);
+    } catch (error) {
+      console.error('❌ Failed to switch microphone:', error);
+      // TODO: Show toast notification to user
+    }
+  };
+
+  const handleSpeakerChange = async (deviceId: string | null) => {
+    try {
+      console.log('🔊 Changing speaker device:', deviceId);
+      // No action needed here - the audioDeviceService handles it automatically
+      // and ParticipantCard components will apply the new device
+    } catch (error) {
+      console.error('❌ Failed to switch speaker:', error);
+      // TODO: Show toast notification to user
+    }
+  };
+
   const formatTime = (timestamp: number) => {
     return new Date(timestamp).toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -244,7 +266,7 @@ export function CallRoom() {
 
   // Render different layouts for direct vs group calls
   if (isDirectCall) {
-    return <DirectCallLayout
+    return <DirectCallLayout 
       allParticipants={allParticipants}
       currentUserId={currentUserId}
       currentUserName={currentUserName}
@@ -263,6 +285,8 @@ export function CallRoom() {
       replyingTo={replyingTo}
       setReplyingTo={setReplyingTo}
       handleLeaveCall={handleLeaveCall}
+      handleMicrophoneChange={handleMicrophoneChange}
+      handleSpeakerChange={handleSpeakerChange}
       messagesEndRef={messagesEndRef}
       formatTime={formatTime}
       getInitials={getInitials}
@@ -342,6 +366,12 @@ export function CallRoom() {
                   {isVideoEnabled ? 'Stop Video' : 'Start Video'}
                 </Button>
 
+                <DeviceSelector
+                  onMicrophoneChange={handleMicrophoneChange}
+                  onSpeakerChange={handleSpeakerChange}
+                  disabled={!currentRoom}
+                />
+
                 <Separator orientation="vertical" className="h-8" />
 
                 <Button 
@@ -415,6 +445,8 @@ function DirectCallLayout({
   handleToggleMute,
   handleToggleVideo,
   handleLeaveCall,
+  handleMicrophoneChange,
+  handleSpeakerChange,
   handleReply,
   handleReact,
   replyingTo,
@@ -544,6 +576,12 @@ function DirectCallLayout({
               {isVideoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
               {isVideoEnabled ? 'Stop Video' : 'Start Video'}
             </Button>
+
+            <DeviceSelector
+              onMicrophoneChange={handleMicrophoneChange}
+              onSpeakerChange={handleSpeakerChange}
+              disabled={false}
+            />
 
             <Separator orientation="vertical" className="h-8" />
 

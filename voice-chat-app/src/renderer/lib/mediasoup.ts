@@ -1,6 +1,7 @@
 import { Device, types } from 'mediasoup-client';
 import { socketService } from '../services/socket';
 import { useVoiceChatStore } from '../stores/voiceChatStore';
+import { audioDeviceService } from '../services/audioDeviceService';
 
 export class WebRTCService {
   private device: Device | null = null;
@@ -473,6 +474,170 @@ export class WebRTCService {
       return stream;
     } catch (error) {
       console.error('❌ Error getting user media:', error);
+      throw error;
+    }
+  }
+
+  // Get user media with specific device constraints
+  async getUserMediaWithDevice(
+    audioDeviceId?: string | null,
+    videoDeviceId?: string | null,
+    video: boolean = false
+  ): Promise<MediaStream> {
+    try {
+      console.log('🎥 Getting user media with specific devices...', { 
+        audioDeviceId: audioDeviceId || 'default', 
+        videoDeviceId: videoDeviceId || 'default',
+        video 
+      });
+      
+      return await audioDeviceService.getUserMediaWithDevice(audioDeviceId, videoDeviceId, video);
+    } catch (error) {
+      console.error('❌ Error getting user media with devices:', error);
+      throw error;
+    }
+  }
+
+  // Switch microphone input device during active call
+  async switchMicrophone(deviceId: string | null): Promise<void> {
+    try {
+      console.log('🎤 Switching microphone to:', deviceId || 'default');
+
+      // Find current audio producer
+      const audioProducer = Array.from(this.producers.values()).find(p => p.kind === 'audio');
+      if (!audioProducer) {
+        console.warn('⚠️ No audio producer found, cannot switch microphone');
+        return;
+      }
+
+      // Get current audio track state
+      const wasEnabled = !audioProducer.paused;
+      const oldTrack = audioProducer.track;
+
+      console.log('  📊 Current audio producer state:', {
+        id: audioProducer.id,
+        paused: audioProducer.paused,
+        closed: audioProducer.closed,
+        trackId: oldTrack?.id,
+      });
+
+      // Get new audio stream with specific device
+      console.log('  🎙️ Getting new audio stream...');
+      const newStream = await this.getUserMediaWithDevice(deviceId, null, false);
+      const newAudioTrack = newStream.getAudioTracks()[0];
+
+      if (!newAudioTrack) {
+        throw new Error('No audio track in new stream');
+      }
+
+      console.log('  ✅ New audio track obtained:', {
+        id: newAudioTrack.id,
+        label: newAudioTrack.label,
+        enabled: newAudioTrack.enabled,
+        readyState: newAudioTrack.readyState,
+      });
+
+      // Replace the track in the producer
+      console.log('  🔄 Replacing audio track in producer...');
+      await audioProducer.replaceTrack({ track: newAudioTrack });
+      console.log('  ✅ Audio track replaced successfully');
+
+      // Stop the old track
+      if (oldTrack) {
+        oldTrack.stop();
+        console.log('  🛑 Old audio track stopped');
+      }
+
+      // Restore audio state
+      if (wasEnabled) {
+        audioProducer.resume();
+        console.log('  ▶️ Audio producer resumed');
+      } else {
+        audioProducer.pause();
+        console.log('  ⏸️ Audio producer paused (was muted)');
+      }
+
+      // Update local audio track in store
+      useVoiceChatStore.getState().setLocalAudioTrack(newAudioTrack);
+      console.log('  📝 Local audio track updated in store');
+
+      // Update device selection in service
+      audioDeviceService.setAudioInputDevice(deviceId);
+      console.log('✅ Microphone switched successfully');
+
+    } catch (error) {
+      console.error('❌ Error switching microphone:', error);
+      throw error;
+    }
+  }
+
+  // Switch camera input device during active call
+  async switchCamera(deviceId: string | null): Promise<void> {
+    try {
+      console.log('📹 Switching camera to:', deviceId || 'default');
+
+      // Find current video producer
+      const videoProducer = Array.from(this.producers.values()).find(p => p.kind === 'video');
+      if (!videoProducer) {
+        console.warn('⚠️ No video producer found, cannot switch camera');
+        return;
+      }
+
+      // Get current video track state
+      const wasEnabled = !videoProducer.paused;
+      const oldTrack = videoProducer.track;
+
+      console.log('  📊 Current video producer state:', {
+        id: videoProducer.id,
+        paused: videoProducer.paused,
+        closed: videoProducer.closed,
+        trackId: oldTrack?.id,
+      });
+
+      // Get new video stream with specific device
+      console.log('  📷 Getting new video stream...');
+      const newStream = await this.getUserMediaWithDevice(null, deviceId, true);
+      const newVideoTrack = newStream.getVideoTracks()[0];
+
+      if (!newVideoTrack) {
+        throw new Error('No video track in new stream');
+      }
+
+      console.log('  ✅ New video track obtained:', {
+        id: newVideoTrack.id,
+        label: newVideoTrack.label,
+        enabled: newVideoTrack.enabled,
+        readyState: newVideoTrack.readyState,
+      });
+
+      // Replace the track in the producer
+      console.log('  🔄 Replacing video track in producer...');
+      await videoProducer.replaceTrack({ track: newVideoTrack });
+      console.log('  ✅ Video track replaced successfully');
+
+      // Stop the old track
+      if (oldTrack) {
+        oldTrack.stop();
+        console.log('  🛑 Old video track stopped');
+      }
+
+      // Restore video state
+      if (wasEnabled) {
+        videoProducer.resume();
+        console.log('  ▶️ Video producer resumed');
+      } else {
+        videoProducer.pause();
+        console.log('  ⏸️ Video producer paused (was disabled)');
+      }
+
+      // Update local video track in store
+      useVoiceChatStore.getState().setLocalVideoTrack(newVideoTrack);
+      console.log('  📝 Local video track updated in store');
+
+      console.log('✅ Camera switched successfully');
+
+    } catch (error) {
+      console.error('❌ Error switching camera:', error);
       throw error;
     }
   }

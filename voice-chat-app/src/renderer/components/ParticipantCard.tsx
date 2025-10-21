@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Mic, MicOff } from 'lucide-react';
+import { audioDeviceService } from '../services/audioDeviceService';
 
 interface ParticipantCardProps {
   name: string;
@@ -25,6 +26,31 @@ export function ParticipantCard({
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const monitorIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Apply audio output device to audio element
+  const applyAudioOutputDevice = useCallback(async () => {
+    if (audioRef.current && !isLocal) {
+      try {
+        await audioDeviceService.applyAudioOutputDevice(audioRef.current);
+        console.log(`✅ Audio output device applied for ${name}`);
+      } catch (error) {
+        console.warn(`⚠️ Failed to apply audio output device for ${name}:`, error);
+      }
+    }
+  }, [name, isLocal]);
+
+  // Listen for device changes
+  useEffect(() => {
+    const handleDeviceChange = () => {
+      applyAudioOutputDevice();
+    };
+
+    audioDeviceService.addDeviceChangeListener(handleDeviceChange);
+
+    return () => {
+      audioDeviceService.removeDeviceChangeListener(handleDeviceChange);
+    };
+  }, [applyAudioOutputDevice]);
 
   useEffect(() => {
     console.log(`🎥 ParticipantCard ${name} - videoTrack:`, videoTrack);
@@ -63,6 +89,9 @@ export function ParticipantCard({
       audioRef.current.play().then(async () => {
         console.log(`✅ Audio playing for ${name}`);
         console.log(`  📊 Audio state - paused: ${audioRef.current?.paused}, volume: ${audioRef.current?.volume}, readyState: ${audioRef.current?.readyState}`);
+        
+        // Apply audio output device after audio starts playing
+        await applyAudioOutputDevice();
         
         // Check if audio is actually playing by monitoring audio levels
         const audioContext = new AudioContext();
