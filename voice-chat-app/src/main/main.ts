@@ -409,3 +409,17 @@ ipcMain.on("show-window", () => {
 
 // Log store path for debugging
 console.log("📦 Electron Store Path:", store.path);
+
+// IPC Handler for desktop capturer
+import { desktopCapturer } from 'electron';
+
+ipcMain.handle('desktop-capturer-get-sources', async (_event, opts) => {
+  const sources = await desktopCapturer.getSources(opts);
+  return sources.map(source => ({
+    id: source.id,
+    name: source.name,
+    thumbnail: source.thumbnail.toDataURL(),
+    display_id: source.display_id,
+    appIcon: source.appIcon ? source.appIcon.toDataURL() : null,
+  }));
+});

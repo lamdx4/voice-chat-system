@@ -13,6 +13,7 @@ import { ResizableSidePanel } from './ResizableSidePanel';
 import { ParticipantGrid } from './ParticipantGrid';
 import { ParticipantSidebar } from './ParticipantSidebar';
 import { DeviceSelector } from './DeviceSelector';
+import { ScreenShareModal } from './ScreenShareModal';
 import {
   Mic,
   MicOff,
@@ -21,6 +22,7 @@ import {
   PhoneOff,
   MessageSquare,
   Users,
+  Monitor,
 } from 'lucide-react';
 
 export function CallRoom() {
@@ -31,8 +33,10 @@ export function CallRoom() {
   const isVideoEnabled = useVoiceChatStore((state) => state.isVideoEnabled);
   const localAudioTrack = useVoiceChatStore((state) => state.localAudioTrack);
   const localVideoTrack = useVoiceChatStore((state) => state.localVideoTrack);
+  const localScreenTrack = useVoiceChatStore((state) => state.localScreenTrack);
   const setMuted = useVoiceChatStore((state) => state.setMuted);
   const setVideoEnabled = useVoiceChatStore((state) => state.setVideoEnabled);
+  const isScreenSharing = useVoiceChatStore((state) => state.isScreenSharing);
   const leaveRoom = useVoiceChatStore((state) => state.leaveRoom);
   
   const currentUserId = useUserStore((state) => state.userId);
@@ -163,6 +167,38 @@ export function CallRoom() {
     }
   };
 
+  const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+
+  const handleToggleScreenShare = async () => {
+    if (localScreenTrack) {
+      // Stop screen share
+      await webrtcService.stopScreenShare();
+      return;
+    }
+
+    // Check if running in Electron
+    // @ts-ignore
+    if (window.electronAPI) {
+      setIsScreenShareModalOpen(true);
+    } else {
+      // Web browser - use standard API
+      try {
+        await webrtcService.startScreenShare();
+      } catch (error) {
+        console.error("Failed to start screen share:", error);
+      }
+    }
+  };
+
+  const handleScreenShareSelect = async (sourceId: string) => {
+    setIsScreenShareModalOpen(false);
+    try {
+      await webrtcService.startScreenShare(sourceId);
+    } catch (error) {
+      console.error("Failed to start screen share with source:", error);
+    }
+  };
+
   const handleLeaveCall = async () => {
     if (!currentRoom) return;
 
@@ -272,6 +308,7 @@ export function CallRoom() {
       currentUserName={currentUserName}
       isMuted={isMuted}
       isVideoEnabled={isVideoEnabled}
+      isScreenSharing={isScreenSharing}
       localAudioTrack={localAudioTrack}
       localVideoTrack={localVideoTrack}
       messages={messages}
@@ -280,6 +317,7 @@ export function CallRoom() {
       handleSendMessage={handleSendMessage}
       handleToggleMute={handleToggleMute}
       handleToggleVideo={handleToggleVideo}
+      handleToggleScreenShare={handleToggleScreenShare}
       handleReply={handleReply}
       handleReact={handleReact}
       replyingTo={replyingTo}
@@ -290,6 +328,9 @@ export function CallRoom() {
       messagesEndRef={messagesEndRef}
       formatTime={formatTime}
       getInitials={getInitials}
+      isScreenShareModalOpen={isScreenShareModalOpen}
+      setIsScreenShareModalOpen={setIsScreenShareModalOpen}
+      handleScreenShareSelect={handleScreenShareSelect}
     />;
   }
 
@@ -366,6 +407,16 @@ export function CallRoom() {
                   {isVideoEnabled ? 'Stop Video' : 'Start Video'}
                 </Button>
 
+                <Button
+                  variant={isScreenSharing ? 'default' : 'outline'}
+                  size="lg"
+                  onClick={handleToggleScreenShare}
+                  className="gap-2"
+                >
+                  <Monitor className="w-5 h-5" />
+                  {isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+                </Button>
+
                 <DeviceSelector
                   onMicrophoneChange={handleMicrophoneChange}
                   onSpeakerChange={handleSpeakerChange}
@@ -416,6 +467,13 @@ export function CallRoom() {
           />
         )}
       </div>
+
+      {/* Screen Share Modal */}
+      <ScreenShareModal
+        isOpen={isScreenShareModalOpen}
+        onClose={() => setIsScreenShareModalOpen(false)}
+        onSelect={handleScreenShareSelect}
+      />
     </div>
   );
 
@@ -436,6 +494,7 @@ function DirectCallLayout({
   currentUserName,
   isMuted, 
   isVideoEnabled,
+  isScreenSharing,
   localAudioTrack,
   localVideoTrack,
   messages,
@@ -444,6 +503,7 @@ function DirectCallLayout({
   handleSendMessage,
   handleToggleMute,
   handleToggleVideo,
+  handleToggleScreenShare,
   handleLeaveCall,
   handleMicrophoneChange,
   handleSpeakerChange,
@@ -454,6 +514,9 @@ function DirectCallLayout({
   messagesEndRef,
   formatTime,
   getInitials,
+  isScreenShareModalOpen,
+  setIsScreenShareModalOpen,
+  handleScreenShareSelect,
 }: any) {
   const [showChat, setShowChat] = useState(false);
   const localUser = allParticipants.find((p: any) => p.isLocal);
@@ -575,6 +638,16 @@ function DirectCallLayout({
             >
               {isVideoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
               {isVideoEnabled ? 'Stop Video' : 'Start Video'}
+            </Button>
+
+            <Button
+              variant={isScreenSharing ? 'default' : 'outline'}
+              size="lg"
+              onClick={handleToggleScreenShare}
+              className="gap-2"
+            >
+              <Monitor className="w-5 h-5" />
+              {isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
             </Button>
 
             <DeviceSelector

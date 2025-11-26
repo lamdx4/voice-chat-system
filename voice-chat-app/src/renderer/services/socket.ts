@@ -162,6 +162,12 @@ class SocketService {
         joinedAt: Date.now(),
         isHost: false,
         status: 'accepted' as any,
+        isMuted: false,
+        isVideoEnabled: false,
+        isScreenSharing: false,
+        localAudioTrack: null,
+        localVideoTrack: null,
+        localScreenTrack: null,
         producerIds: [],
         consumerIds: [],
       });
@@ -206,21 +212,70 @@ class SocketService {
     });
 
     this.socket.on('newProducer', async (data: NewProducerEvent) => {
-      console.log('🎥 New producer:', data);
+      console.log('🎬 New producer available:', data);
+      const store = useVoiceChatStore.getState();
+      const currentRoom = store.currentRoom;
       
+      if (!currentRoom) {
+        console.log('❌ No current room, ignoring newProducer event');
+        return;
+      }
+
       // Dynamically import webrtcService to avoid circular dependency
       const { webrtcService } = await import('../lib/mediasoup');
       
       // Consume the new producer
+      console.log(`📡 Consuming producer ${data.producerId} from user ${data.userId}`);
       try {
-        await webrtcService.consume(
-          data.producerId,
-          data.userId,
-          data.kind as 'audio' | 'video'
-        );
-        console.log('✅ Successfully consumed producer:', data.producerId);
+        await webrtcService.consume(data.producerId, data.userId, data.kind as 'audio' | 'video', data.appData);
+        console.log('✅ Successfully consumed producer');
       } catch (error) {
         console.error('❌ Error consuming producer:', error);
+      }
+    });
+
+    // Listen for producer closed events (e.g., when user stops screen share)
+    this.socket.on('producerClosed', async (data: { producerId: string; userId: string; kind: string }) => {
+      console.log('🛑 Producer closed:', data);
+      const store = useVoiceChatStore.getState();
+      
+      // Dynamically import webrtcService to avoid circular dependency
+      const { webrtcService } = await import('../lib/mediasoup');
+
+      // Find and close the corresponding consumer
+      const consumers = webrtcService.getConsumers();
+      const consumer = Array.from(consumers.values()).find(
+        c => c.producerId === data.producerId
+      );
+      
+      if (consumer) {
+        console.log(`  ✅ Closing consumer ${consumer.id} for closed producer ${data.producerId}`);
+        consumer.close();
+        webrtcService.removeConsumer(consumer.id);
+        
+        // Update store - remove participant if it was a screen share
+        // Screen share virtual participants have ID like "screen-{userId}"
+        const screenParticipantId = `screen-${data.userId}`;
+        const participant = store.participants.get(screenParticipantId);
+        
+        if (participant) {
+          console.log(`  🖥️ Removing screen share virtual participant: ${screenParticipantId}`);
+          store.removeParticipant(screenParticipantId);
+        } else {
+          // If it's not a screen share, update the regular participant
+          const regularParticipant = store.participants.get(data.userId);
+          if (regularParticipant) {
+            if (data.kind === 'video') {
+              regularParticipant.videoTrack = undefined;
+              regularParticipant.isVideoEnabled = false;
+            } else if (data.kind === 'audio') {
+              regularParticipant.audioTrack = undefined;
+            }
+            store.updateParticipant(data.userId, regularParticipant);
+          }
+        }
+      } else {
+        console.log(`  ⚠️ No consumer found for closed producer ${data.producerId}`);
       }
     });
 
