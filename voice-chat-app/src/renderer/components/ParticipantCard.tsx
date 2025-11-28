@@ -194,8 +194,8 @@ export function ParticipantCard({
   };
 
   return (
-    <Card className="relative overflow-hidden shadow-lg border-2 h-full">
-      <CardContent className="p-0 h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
+    <Card className="relative overflow-hidden shadow-lg border-2 w-full h-full">
+      <CardContent className="p-0 w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
         {videoTrack || (isLocal && isVideoEnabled) ? (
           <video
             ref={videoRef}
