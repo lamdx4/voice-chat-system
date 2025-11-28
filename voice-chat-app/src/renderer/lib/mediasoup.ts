@@ -250,7 +250,9 @@ export class WebRTCService {
       if (track.kind === 'audio') {
         store.setLocalAudioTrack(track);
         console.log('  ✅ Audio track set to store:', track.id);
-      } else if (track.kind === 'video') {
+      } else if (track.kind === 'video' && source !== 'screen') {
+        // Only update localVideoTrack for camera, not screen share
+        // Screen share track will be managed separately in startScreenShare()
         store.setLocalVideoTrack(track);
         console.log('  ✅ Video track set to store:', track.id);
       }
@@ -840,6 +842,27 @@ export class WebRTCService {
       store.setLocalScreenTrack(videoTrack);
       store.setScreenSharing(true); // ✅ Update UI state
       
+      // Create virtual participant for local screen share
+      // This makes the UI consistent - user sees their screen as a separate tile
+      // Find current user by checking for local tracks (only current user has them)
+      const currentUser = Array.from(store.participants.values()).find(
+        p => p.localAudioTrack !== null || p.localVideoTrack !== null
+      );
+      if (currentUser) {
+        const screenParticipant: any = {
+          ...currentUser, // Copy all fields from current user
+          userId: `screen-${currentUser.userId}`,
+          name: 'Màn hình của bạn',
+          isScreenSharing: true,
+          videoTrack: videoTrack,
+          audioTrack: undefined, // Screen share has no audio
+          isVideoEnabled: true,
+          isMuted: true,
+        };
+        store.addParticipant(screenParticipant);
+        console.log('  ✅ Created local screen share participant:', screenParticipant.userId);
+      }
+      
       console.log('✅ Screen share started');
     } catch (error) {
       console.error('❌ Error starting screen share:', error);
@@ -879,8 +902,20 @@ export class WebRTCService {
       }
       
       // Update store
-      useVoiceChatStore.getState().setLocalScreenTrack(null);
-      useVoiceChatStore.getState().setScreenSharing(false);
+      const store = useVoiceChatStore.getState();
+      
+      // Remove local screen share virtual participant
+      const currentUser = Array.from(store.participants.values()).find(
+        p => p.localAudioTrack !== null || p.localVideoTrack !== null
+      );
+      if (currentUser) {
+        const screenParticipantId = `screen-${currentUser.userId}`;
+        store.removeParticipant(screenParticipantId);
+        console.log('  ✅ Removed local screen share participant:', screenParticipantId);
+      }
+      
+      store.setLocalScreenTrack(null);
+      store.setScreenSharing(false);
       
     } catch (error) {
       console.error('❌ Error stopping screen share:', error);
