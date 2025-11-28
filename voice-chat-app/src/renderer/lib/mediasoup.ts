@@ -83,15 +83,14 @@ export class WebRTCService {
       // Handle produce event
       this.sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback, errback) => {
         try {
-          // Inject appData into rtpParameters so server can extract it
-          // Server expects: const appData = (rtpParameters as any).appData || {};
-          (rtpParameters as any).appData = appData;
-
+          console.log('📤 [DEBUG] Producing with appData:', appData);
+          
           const response = await socketService.produce(
             roomId,
             this.sendTransport!.id,
             kind,
-            rtpParameters
+            rtpParameters,
+            appData  // ✅ Pass appData as separate parameter
           );
           
           if (!response.success || !response.producerId) {
@@ -839,6 +838,7 @@ export class WebRTCService {
       // Update local state
       const store = useVoiceChatStore.getState();
       store.setLocalScreenTrack(videoTrack);
+      store.setScreenSharing(true); // ✅ Update UI state
       
       console.log('✅ Screen share started');
     } catch (error) {
@@ -869,12 +869,12 @@ export class WebRTCService {
         console.log('  ✅ Screen producer closed:', producerId);
         
         // Notify server explicitly to ensure remote peers are updated
-        // Server will handle removing the consumer for other participants
         const roomId = useVoiceChatStore.getState().currentRoom?.roomId;
         if (roomId && socketService.isConnected()) {
-          // The producer.close() above should trigger the server's transport.on('producerclose')
-          // But we can add explicit notification if needed
-          console.log('  📡 Producer closed, server will notify remote peers');
+          console.log('  📡 Sending closeProducer signal to server...');
+          socketService.closeProducer(producerId)
+            .then(() => console.log('  ✅ Server confirmed producer closed'))
+            .catch(err => console.error('  ❌ Failed to notify server:', err));
         }
       }
       

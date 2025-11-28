@@ -254,14 +254,19 @@ class SocketService {
         webrtcService.removeConsumer(consumer.id);
         
         // Update store - remove participant if it was a screen share
-        // Screen share virtual participants have ID like "screen-{userId}"
+        // Screen share virtual participants have ID like "screen-{userId}" (IMPORTANT: not userId-screen!)
         const screenParticipantId = `screen-${data.userId}`;
         const participant = store.participants.get(screenParticipantId);
+        
+        console.log(`  🔍 Looking for screen participant: ${screenParticipantId}`);
+        console.log(`  📊 Current participants:`, Array.from(store.participants.keys()));
         
         if (participant) {
           console.log(`  🖥️ Removing screen share virtual participant: ${screenParticipantId}`);
           store.removeParticipant(screenParticipantId);
+          console.log(`  ✅ Screen share participant removed successfully`);
         } else {
+          console.log(`  ℹ️ Not a screen share, updating regular participant`);
           // If it's not a screen share, update the regular participant
           const regularParticipant = store.participants.get(data.userId);
           if (regularParticipant) {
@@ -591,14 +596,16 @@ class SocketService {
     });
   }
 
-  produce(roomId: string, transportId: string, kind: 'audio' | 'video', rtpParameters: any): Promise<any> {
+  produce(roomId: string, transportId: string, kind: 'audio' | 'video', rtpParameters: any, appData?: any): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.socket) {
         reject(new Error('Not connected'));
         return;
       }
 
-      this.socket.emit('produce', { roomId, transportId, kind, rtpParameters }, (response: any) => {
+      console.log('📤 [DEBUG] Sending produce to server with appData:', appData);
+      
+      this.socket.emit('produce', { roomId, transportId, kind, rtpParameters, appData }, (response: any) => {
         if (response.error) {
           reject(new Error(response.error));
         } else {
@@ -637,6 +644,25 @@ class SocketService {
           reject(new Error(response.error));
         } else {
           resolve(response);
+        }
+      });
+    });
+  }
+
+  closeProducer(producerId: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket) {
+        reject(new Error('Not connected'));
+        return;
+      }
+
+      console.log('📡 [DEBUG] Calling closeProducer for:', producerId);
+      
+      this.socket.emit('closeProducer', { producerId }, (response: any) => {
+        if (response && response.success) {
+          resolve(response);
+        } else {
+          reject(new Error(response ? response.error : 'Unknown error'));
         }
       });
     });

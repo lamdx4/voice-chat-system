@@ -175,6 +175,7 @@ export interface ProducePayload {
   transportId: string;
   kind: types.MediaKind;
   rtpParameters: types.RtpParameters;
+  appData?: any;  // ✅ Add appData field
 }
 
 export interface ConsumePayload {

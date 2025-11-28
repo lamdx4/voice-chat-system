@@ -8,7 +8,7 @@ import { useVoiceChatStore } from '@/stores/voiceChatStore';
 import { useUserStore } from '@/stores/userStore';
 import { socketService } from '@/services/socket';
 import { webrtcService } from '@/lib/mediasoup';
-import { RoomType, ChatMessage } from '@/types';
+import { ChatMessage } from '@/types';
 import { ResizableSidePanel } from './ResizableSidePanel';
 import { ParticipantGrid } from './ParticipantGrid';
 import { ParticipantSidebar } from './ParticipantSidebar';
@@ -298,41 +298,7 @@ export function CallRoom() {
     }))
   ];
 
-  const isDirectCall = currentRoom.roomType === RoomType.DIRECT;
-
-  // Render different layouts for direct vs group calls
-  if (isDirectCall) {
-    return <DirectCallLayout 
-      allParticipants={allParticipants}
-      currentUserId={currentUserId}
-      currentUserName={currentUserName}
-      isMuted={isMuted}
-      isVideoEnabled={isVideoEnabled}
-      isScreenSharing={isScreenSharing}
-      localAudioTrack={localAudioTrack}
-      localVideoTrack={localVideoTrack}
-      messages={messages}
-      messageInput={messageInput}
-      setMessageInput={setMessageInput}
-      handleSendMessage={handleSendMessage}
-      handleToggleMute={handleToggleMute}
-      handleToggleVideo={handleToggleVideo}
-      handleToggleScreenShare={handleToggleScreenShare}
-      handleReply={handleReply}
-      handleReact={handleReact}
-      replyingTo={replyingTo}
-      setReplyingTo={setReplyingTo}
-      handleLeaveCall={handleLeaveCall}
-      handleMicrophoneChange={handleMicrophoneChange}
-      handleSpeakerChange={handleSpeakerChange}
-      messagesEndRef={messagesEndRef}
-      formatTime={formatTime}
-      getInitials={getInitials}
-      isScreenShareModalOpen={isScreenShareModalOpen}
-      setIsScreenShareModalOpen={setIsScreenShareModalOpen}
-      handleScreenShareSelect={handleScreenShareSelect}
-    />;
-  }
+  // const isDirectCall = currentRoom.roomType === RoomType.DIRECT;
 
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
@@ -366,7 +332,7 @@ export function CallRoom() {
           </div>
 
           {/* Video Area */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-auto">
             <ParticipantGrid
               participants={allParticipants}
               isMuted={isMuted}
@@ -411,10 +377,10 @@ export function CallRoom() {
                   variant={isScreenSharing ? 'default' : 'outline'}
                   size="lg"
                   onClick={handleToggleScreenShare}
-                  className="gap-2"
+                  className={`gap-2 ${isScreenSharing ? 'bg-green-600 hover:bg-green-700 animate-pulse' : ''}`}
                 >
-                  <Monitor className="w-5 h-5" />
-                  {isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+                  <Monitor className={`w-5 h-5 ${isScreenSharing ? 'animate-pulse' : ''}`} />
+                  {isScreenSharing ? '🔴 Đang chia sẻ' : 'Share Screen'}
                 </Button>
 
                 <DeviceSelector
@@ -487,192 +453,6 @@ export function CallRoom() {
   }
 }
 
-// Direct Call Layout - Messaging style for 1-on-1 calls
-function DirectCallLayout({ 
-  allParticipants, 
-  currentUserId,
-  currentUserName,
-  isMuted, 
-  isVideoEnabled,
-  isScreenSharing,
-  localAudioTrack,
-  localVideoTrack,
-  messages,
-  messageInput,
-  setMessageInput,
-  handleSendMessage,
-  handleToggleMute,
-  handleToggleVideo,
-  handleToggleScreenShare,
-  handleLeaveCall,
-  handleMicrophoneChange,
-  handleSpeakerChange,
-  handleReply,
-  handleReact,
-  replyingTo,
-  setReplyingTo,
-  messagesEndRef,
-  formatTime,
-  getInitials,
-  isScreenShareModalOpen,
-  setIsScreenShareModalOpen,
-  handleScreenShareSelect,
-}: any) {
-  const [showChat, setShowChat] = useState(false);
-  const localUser = allParticipants.find((p: any) => p.isLocal);
-  const remoteUser = allParticipants.find((p: any) => !p.isLocal);
-
-  // Debug logging
-  useEffect(() => {
-    console.log('🎬 DirectCallLayout - All participants:', allParticipants);
-    console.log('👤 Local user:', localUser);
-    console.log('👥 Remote user:', remoteUser);
-    if (remoteUser) {
-      console.log('🔍 Remote user audioTrack:', remoteUser.audioTrack);
-      console.log('🔍 Remote user videoTrack:', remoteUser.videoTrack);
-    }
-  }, [allParticipants, localUser, remoteUser]);
-
-  return (
-    <div className="fixed inset-0 bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <div className="h-full flex flex-col">
-        {/* Header */}
-        <div className="h-16 bg-white border-b shadow-sm px-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Avatar className="w-10 h-10 border-2 border-blue-500">
-              <AvatarFallback className="bg-blue-100 text-blue-700 font-semibold">
-                {getInitials(remoteUser?.name || '')}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <h2 className="font-semibold text-lg">{remoteUser?.name || 'Connecting...'}</h2>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span>In call</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant={showChat ? "default" : "outline"}
-              size="sm"
-              onClick={() => setShowChat(!showChat)}
-            >
-              <MessageSquare className="w-4 h-4 mr-2" />
-              Chat
-            </Button>
-          </div>
-        </div>
-
-        {/* Main Content */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Video Area - 2 columns for direct call */}
-          <div className="flex-1 flex gap-4 p-6">
-            {/* Remote User */}
-            <Card className="flex-1 shadow-lg">
-              <CardContent className="p-0 h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
-                <ParticipantCard
-                  name={remoteUser?.name || 'Connecting...'}
-                  isLocal={false}
-                  isMuted={remoteUser?.isMuted}
-                  isVideoEnabled={remoteUser?.isVideoEnabled}
-                  audioTrack={remoteUser?.audioTrack}
-                  videoTrack={remoteUser?.videoTrack}
-                />
-              </CardContent>
-            </Card>
-
-            {/* Local User (You) */}
-            <Card className="flex-1 shadow-lg">
-              <CardContent className="p-0 h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50">
-                <ParticipantCard
-                  name={localUser?.name || currentUserName}
-                  isLocal={true}
-                  isMuted={isMuted}
-                  isVideoEnabled={isVideoEnabled}
-                  audioTrack={localAudioTrack || undefined}
-                  videoTrack={localVideoTrack || undefined}
-                />
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Resizable Side Panel Chat */}
-          {showChat && (
-            <ResizableSidePanel
-              messages={messages}
-              messageInput={messageInput}
-              setMessageInput={setMessageInput}
-              handleSendMessage={handleSendMessage}
-              currentUserId={currentUserId}
-              messagesEndRef={messagesEndRef}
-              formatTime={formatTime}
-              getInitials={getInitials}
-              onClose={() => setShowChat(false)}
-              onReply={handleReply}
-              onReact={handleReact}
-              replyingTo={replyingTo}
-              onCancelReply={() => setReplyingTo(null)}
-            />
-          )}
-        </div>
-
-        {/* Bottom Controls */}
-        <div className="h-20 bg-white border-t shadow-lg">
-          <div className="h-full max-w-4xl mx-auto px-6 flex items-center justify-center gap-3">
-            <Button
-              variant={isMuted ? "destructive" : "outline"}
-              size="lg"
-              onClick={handleToggleMute}
-              className="gap-2"
-            >
-              {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              {isMuted ? 'Unmute' : 'Mute'}
-            </Button>
-
-            <Button
-              variant={isVideoEnabled ? "outline" : "secondary"}
-              size="lg"
-              onClick={handleToggleVideo}
-              className="gap-2"
-            >
-              {isVideoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-              {isVideoEnabled ? 'Stop Video' : 'Start Video'}
-            </Button>
-
-            <Button
-              variant={isScreenSharing ? 'default' : 'outline'}
-              size="lg"
-              onClick={handleToggleScreenShare}
-              className="gap-2"
-            >
-              <Monitor className="w-5 h-5" />
-              {isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
-            </Button>
-
-            <DeviceSelector
-              onMicrophoneChange={handleMicrophoneChange}
-              onSpeakerChange={handleSpeakerChange}
-              disabled={false}
-            />
-
-            <Separator orientation="vertical" className="h-8" />
-
-            <Button 
-              variant="destructive" 
-              size="lg" 
-              onClick={handleLeaveCall}
-              className="gap-2"
-            >
-              <PhoneOff className="w-5 h-5" />
-              Leave Call
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // Participant Card Component
 interface ParticipantCardProps {

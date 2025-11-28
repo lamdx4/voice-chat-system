@@ -217,17 +217,42 @@ export function ParticipantCard({
         {!isLocal && audioTrack && <audio ref={audioRef} autoPlay />}
 
         {/* Name and status overlay */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm text-white drop-shadow-lg">{name}</span>
+        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+          {/* Desktop layout: name + icons in one row */}
+          <div className="hidden sm:flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="font-semibold text-sm text-white drop-shadow-lg truncate">{name}</span>
               {isLocal && (
-                <Badge className="text-xs px-2 py-0.5 bg-white/90 text-blue-700 border-0">
+                <Badge className="text-xs px-2 py-0.5 bg-white/90 text-blue-700 border-0 flex-shrink-0">
                   You
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {isMuted && (
+                <div className="bg-red-500 rounded-full p-1.5 shadow-lg">
+                  <MicOff className="w-3.5 h-3.5 text-white" />
+                </div>
+              )}
+              {!isMuted && isLocal && (
+                <div className="bg-green-500 rounded-full p-1.5 shadow-lg animate-pulse">
+                  <Mic className="w-3.5 h-3.5 text-white" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Mobile layout: name on top, icons below */}
+          <div className="flex sm:hidden flex-col gap-1.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-semibold text-sm text-white drop-shadow-lg truncate">{name}</span>
+              {isLocal && (
+                <Badge className="text-xs px-2 py-0.5 bg-white/90 text-blue-700 border-0 flex-shrink-0">
+                  You
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
               {isMuted && (
                 <div className="bg-red-500 rounded-full p-1.5 shadow-lg">
                   <MicOff className="w-3.5 h-3.5 text-white" />
