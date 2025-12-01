@@ -10,7 +10,7 @@ export class WebRTCService {
   private producers: Map<string, types.Producer> = new Map();
   private consumers: Map<string, types.Consumer> = new Map();
   private currentRoomId: string | null = null;
-  private pendingProducers: Array<{producerId: string, userId: string, kind: 'audio' | 'video'}> = [];
+  private pendingProducers: Array<{ producerId: string, userId: string, kind: 'audio' | 'video', appData?: any }> = [];
 
   constructor() {
     this.device = new Device();
@@ -20,22 +20,22 @@ export class WebRTCService {
   async initializeDevice(roomId: string) {
     try {
       this.currentRoomId = roomId;
-      
+
       // Check if device is already loaded
       if (this.device && this.device.loaded) {
         console.log('✅ Device already loaded, skipping initialization');
         return true;
       }
-      
+
       console.log('🎙️ Getting router RTP capabilities...');
       const rtpCapabilities = await socketService.getRouterRtpCapabilities(roomId);
-      
+
       console.log('🎙️ Loading device...');
       if (!this.device) {
         this.device = new Device();
       }
       await this.device.load({ routerRtpCapabilities: rtpCapabilities });
-      
+
       console.log('✅ Device loaded successfully');
       return true;
     } catch (error) {
@@ -52,17 +52,17 @@ export class WebRTCService {
         console.log('✅ Send transport already exists, skipping creation');
         return this.sendTransport;
       }
-      
+
       console.log('🚀 Creating send transport...');
       const response = await socketService.createTransport(roomId, 'send');
-      
+
       if (!response.success || !response.params) {
         throw new Error('Failed to create transport: ' + (response.error || 'No params'));
       }
-      
+
       const transportData = response.params;
       console.log('📦 Transport data received:', transportData);
-      
+
       this.sendTransport = this.device!.createSendTransport({
         id: transportData.id,
         iceParameters: transportData.iceParameters,
@@ -81,19 +81,22 @@ export class WebRTCService {
       });
 
       // Handle produce event
-      this.sendTransport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
+      this.sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback, errback) => {
         try {
+          console.log('📤 [DEBUG] Producing with appData:', appData);
+
           const response = await socketService.produce(
             roomId,
             this.sendTransport!.id,
             kind,
-            rtpParameters
+            rtpParameters,
+            appData  // ✅ Pass appData as separate parameter
           );
-          
+
           if (!response.success || !response.producerId) {
             throw new Error('Failed to produce: ' + (response.error || 'No producerId'));
           }
-          
+
           console.log('✅ Producer created on server:', response.producerId);
           callback({ id: response.producerId });
         } catch (error) {
@@ -127,17 +130,17 @@ export class WebRTCService {
         console.log('✅ Receive transport already exists, skipping creation');
         return this.recvTransport;
       }
-      
+
       console.log('🚀 Creating receive transport...');
       const response = await socketService.createTransport(roomId, 'receive');
-      
+
       if (!response.success || !response.params) {
         throw new Error('Failed to create transport: ' + (response.error || 'No params'));
       }
-      
+
       const transportData = response.params;
       console.log('📦 Receive transport data received:', transportData);
-      
+
       this.recvTransport = this.device!.createRecvTransport({
         id: transportData.id,
         iceParameters: transportData.iceParameters,
@@ -172,19 +175,22 @@ export class WebRTCService {
     }
   }
 
-  // Produce audio/video
-  async produce(track: MediaStreamTrack) {
+  // Produce audio/video/screen
+  async produce(track: MediaStreamTrack, source: 'mic' | 'webcam' | 'screen' = 'webcam') {
     try {
       if (!this.sendTransport) {
         throw new Error('Send transport not created');
       }
 
-      console.log(`🎥 Producing ${track.kind}...`);
+      console.log(`🎥 Producing ${track.kind} (source: ${source})...`);
       console.log(`  📊 Track state: enabled=${track.enabled}, readyState=${track.readyState}, muted=${track.muted}`);
-      
+
       // ===== CODEC OPTIONS =====
-      let produceOptions: any = { track };
-      
+      let produceOptions: any = {
+        track,
+        appData: { source } // Pass source in appData
+      };
+
       if (track.kind === 'audio') {
         // Opus codec optimization for voice
         produceOptions.codecOptions = {
@@ -198,7 +204,7 @@ export class WebRTCService {
       } else if (track.kind === 'video') {
         // Video encoding parameters (720p optimized)
         produceOptions.encodings = [
-          { 
+          {
             maxBitrate: 1500000,          // 1.5 Mbps for 720p
           }
         ];
@@ -210,41 +216,43 @@ export class WebRTCService {
           codecOptions: produceOptions.codecOptions,
         });
       }
-      
+
       const producer = await this.sendTransport.produce(produceOptions);
-      
+
       this.producers.set(producer.id, producer);
-      
+
       console.log(`  📊 Producer state: paused=${producer.paused}, closed=${producer.closed}`);
-      
+
       // Monitor producer track ended
       producer.on('trackended', () => {
         console.log(`⚠️ Producer ${producer.id} track ended`);
       });
-      
+
       producer.on('transportclose', () => {
         console.log(`⚠️ Producer ${producer.id} transport closed`);
       });
-      
+
       // Monitor track state
       track.addEventListener('ended', () => {
         console.log(`⚠️ Track ${track.kind} ended`);
       });
-      
+
       track.addEventListener('mute', () => {
         console.log(`🔇 Track ${track.kind} muted`);
       });
-      
+
       track.addEventListener('unmute', () => {
         console.log(`🔊 Track ${track.kind} unmuted`);
       });
-      
+
       // Update store with local track
       const store = useVoiceChatStore.getState();
       if (track.kind === 'audio') {
         store.setLocalAudioTrack(track);
         console.log('  ✅ Audio track set to store:', track.id);
-      } else if (track.kind === 'video') {
+      } else if (track.kind === 'video' && source !== 'screen') {
+        // Only update localVideoTrack for camera, not screen share
+        // Screen share track will be managed separately in startScreenShare()
         store.setLocalVideoTrack(track);
         console.log('  ✅ Video track set to store:', track.id);
       }
@@ -252,14 +260,14 @@ export class WebRTCService {
       console.log(`✅ ${track.kind} producer created:`, producer.id);
       console.log(`  📊 Send transport state: ${this.sendTransport?.connectionState}`);
       console.log(`  📊 Send transport ID: ${this.sendTransport?.id}`);
-      
+
       // Monitor producer stats
       const statsInterval = setInterval(async () => {
         if (producer.closed) {
           clearInterval(statsInterval);
           return;
         }
-        
+
         const stats = await producer.getStats();
         stats.forEach((stat: any) => {
           if (stat.type === 'outbound-rtp') {
@@ -273,7 +281,7 @@ export class WebRTCService {
           }
         });
       }, 3000); // Check every 3 seconds
-      
+
       return producer;
     } catch (error) {
       console.error('❌ Error producing:', error);
@@ -282,19 +290,19 @@ export class WebRTCService {
   }
 
   // Consume media from another participant
-  async consume(producerId: string, userId: string, kind: 'audio' | 'video') {
+  async consume(producerId: string, userId: string, kind: 'audio' | 'video', appData: any = {}) {
     try {
       // If receive transport not ready yet, queue for later
       if (!this.recvTransport || !this.device || !this.currentRoomId) {
         console.log(`⏳ Transport not ready, queuing producer ${producerId} from user ${userId}`);
-        this.pendingProducers.push({ producerId, userId, kind });
+        this.pendingProducers.push({ producerId, userId, kind, appData });
         return;
       }
 
-      console.log(`🎧 Consuming ${kind} from user ${userId}...`);
+      console.log(`🎧 Consuming ${kind} from user ${userId}...`, appData);
       console.log(`  📋 Room: ${this.currentRoomId}`);
       console.log(`  📋 Producer: ${producerId}`);
-      
+
       console.log('  📤 Sending consume request to server...');
       const response = await socketService.consume(
         this.currentRoomId,
@@ -321,25 +329,25 @@ export class WebRTCService {
       console.log(`  📊 Consumer track: enabled=${consumer.track.enabled}, readyState=${consumer.track.readyState}, muted=${consumer.track.muted}`);
 
       this.consumers.set(consumer.id, consumer);
-      
+
       // Monitor consumer events
       consumer.on('trackended', () => {
         console.log(`⚠️ Consumer ${consumer.id} track ended`);
       });
-      
+
       consumer.on('transportclose', () => {
         console.log(`⚠️ Consumer ${consumer.id} transport closed`);
       });
-      
+
       // Monitor consumer track
       consumer.track.addEventListener('ended', () => {
         console.log(`⚠️ Consumer ${consumer.id} track ${kind} ended`);
       });
-      
+
       consumer.track.addEventListener('mute', () => {
         console.log(`🔇 Consumer ${consumer.id} track ${kind} muted`);
       });
-      
+
       consumer.track.addEventListener('unmute', () => {
         console.log(`🔊 Consumer ${consumer.id} track ${kind} unmuted`);
       });
@@ -353,32 +361,78 @@ export class WebRTCService {
       // Update participant with track and enabled status
       console.log('  🔄 Updating participant with track...');
       const store = useVoiceChatStore.getState();
-      
-      const updates: any = {
-        [kind === 'audio' ? 'audioTrack' : 'videoTrack']: consumer.track,
-      };
-      
-      // Update status flags: audio track = not muted, video track = video enabled
-      if (kind === 'audio') {
-        updates.isMuted = false;
-      } else if (kind === 'video') {
-        updates.isVideoEnabled = true;
+
+      // Check if this is a screen share
+      const isScreenShare = appData && appData.source === 'screen';
+
+      if (isScreenShare) {
+        console.log('  🖥️ Handling screen share consumer...');
+        // Create a virtual participant for the screen share
+        const screenParticipantId = `screen-${userId}`;
+        const originalParticipant = store.participants.get(userId);
+
+        if (originalParticipant) {
+          const screenParticipant: any = {
+            userId: screenParticipantId,
+            name: `${originalParticipant.name}'s Screen`,
+            socketId: originalParticipant.socketId, // Reuse socketId
+            isHost: false,
+            isMuted: true, // Screen share usually has no audio or handled separately
+            isVideoEnabled: true,
+            videoTrack: consumer.track,
+            isScreenSharing: true,
+            // Custom flag to identify this as a virtual participant if needed
+          };
+
+          store.addParticipant(screenParticipant);
+          console.log('  ✅ Virtual screen participant added:', screenParticipantId);
+        } else {
+          console.warn('  ⚠️ Original participant not found for screen share:', userId);
+        }
+      } else {
+        // Normal camera/mic handling - only update track
+        // Media state (isMuted, isVideoEnabled) preserved from:
+        // 1. Initial participant data (joinRoom response)
+        // 2. Media state update events (participantMediaStateUpdated)
+
+        // Check current state BEFORE updating
+        const participant = store.participants.get(userId);
+        console.log(`🔍 BEFORE consume ${kind} for ${userId}:`, {
+          hasParticipant: !!participant,
+          isMuted: participant?.isMuted,
+          isVideoEnabled: participant?.isVideoEnabled
+        });
+
+        const updates: any = {
+          [kind === 'audio' ? 'audioTrack' : 'videoTrack']: consumer.track,
+        };
+
+        // Set smart defaults ONLY if state is undefined (preserve server state if exists)
+        if (kind === 'video' && participant?.isVideoEnabled === undefined) {
+          updates.isVideoEnabled = true;  // Default: enabled when first consuming
+          console.log(`  ⚙️ Setting default isVideoEnabled = true (was undefined)`);
+        }
+        if (kind === 'audio' && participant?.isMuted === undefined) {
+          updates.isMuted = false;  // Default: not muted when first consuming
+          console.log(`  ⚙️ Setting default isMuted = false (was undefined)`);
+        }
+
+        console.log(`🔍 Updates to apply for ${userId}:`, updates);
+        store.updateParticipant(userId, updates);
+        console.log(`  ✅ Participant ${kind} track updated`);
       }
-      
-      store.updateParticipant(userId, updates);
-      console.log('  ✅ Participant updated with:', updates);
 
       console.log(`✅ ${kind} consumer created:`, consumer.id);
       console.log(`  📊 Recv transport state: ${this.recvTransport?.connectionState}`);
       console.log(`  📊 Recv transport ID: ${this.recvTransport?.id}`);
-      
+
       // Monitor consumer stats
       const statsInterval = setInterval(async () => {
         if (consumer.closed) {
           clearInterval(statsInterval);
           return;
         }
-        
+
         const stats = await consumer.getStats();
         stats.forEach((stat: any) => {
           if (stat.type === 'inbound-rtp') {
@@ -394,7 +448,7 @@ export class WebRTCService {
           }
         });
       }, 3000); // Check every 3 seconds
-      
+
       return consumer;
     } catch (error) {
       console.error('❌ Error consuming:', error);
@@ -406,7 +460,7 @@ export class WebRTCService {
   async getUserMedia(audio: boolean = true, video: boolean = false): Promise<MediaStream> {
     try {
       console.log('🎥 Getting user media...', { audio, video });
-      
+
       // Check if getUserMedia is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         const errorMsg = 'getUserMedia is not available. This may be because:\n' +
@@ -417,33 +471,33 @@ export class WebRTCService {
         console.error('❌', errorMsg);
         throw new Error(errorMsg);
       }
-      
+
       // ===== OPTIMIZED AUDIO CONSTRAINTS =====
       const audioConstraints: MediaTrackConstraints | boolean = audio ? {
         // WebRTC Audio Processing Module (APM)
         echoCancellation: true,        // ✅ Handle headphone + speakers
         noiseSuppression: true,        // ✅ Filter background noise
         autoGainControl: true,         // ✅ Stable volume
-        
+
         // Quality settings
         sampleRate: 48000,             // Opus native rate
         channelCount: 1,               // Mono for voice (50% bandwidth reduction)
       } : false;
-      
+
       // ===== OPTIMIZED VIDEO CONSTRAINTS =====
       const videoConstraints: MediaTrackConstraints | boolean = video ? {
         width: { ideal: 1280 },
         height: { ideal: 720 },
         frameRate: { ideal: 30, max: 30 },
-        aspectRatio: { ideal: 16/9 },
+        aspectRatio: { ideal: 16 / 9 },
       } : false;
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: audioConstraints, 
-        video: videoConstraints 
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: videoConstraints
       });
       console.log('✅ User media obtained');
-      
+
       // Verify and log applied settings
       stream.getTracks().forEach(track => {
         const settings = track.getSettings();
@@ -452,7 +506,7 @@ export class WebRTCService {
           readyState: track.readyState,
           muted: track.muted,
         });
-        
+
         if (track.kind === 'audio') {
           console.log('  🎙️ Audio settings:', {
             echoCancellation: settings.echoCancellation,
@@ -470,7 +524,7 @@ export class WebRTCService {
           });
         }
       });
-      
+
       return stream;
     } catch (error) {
       console.error('❌ Error getting user media:', error);
@@ -485,12 +539,12 @@ export class WebRTCService {
     video: boolean = false
   ): Promise<MediaStream> {
     try {
-      console.log('🎥 Getting user media with specific devices...', { 
-        audioDeviceId: audioDeviceId || 'default', 
+      console.log('🎥 Getting user media with specific devices...', {
+        audioDeviceId: audioDeviceId || 'default',
         videoDeviceId: videoDeviceId || 'default',
-        video 
+        video
       });
-      
+
       return await audioDeviceService.getUserMediaWithDevice(audioDeviceId, videoDeviceId, video);
     } catch (error) {
       console.error('❌ Error getting user media with devices:', error);
@@ -679,12 +733,12 @@ export class WebRTCService {
         track.stop();
         console.log('  ✅ Video track stopped');
       }
-      
+
       // Close the producer
       videoProducer.close();
       this.producers.delete(videoProducer.id);
       console.log('  ✅ Video producer closed');
-      
+
       // Clear local video track from store
       useVoiceChatStore.getState().setLocalVideoTrack(null);
       useVoiceChatStore.getState().setVideoEnabled(false);
@@ -695,19 +749,19 @@ export class WebRTCService {
   async resumeOrStartVideo() {
     console.log('▶️ Resuming or starting video...');
     const videoProducer = Array.from(this.producers.values()).find(p => p.kind === 'video');
-    
+
     if (videoProducer && !videoProducer.closed) {
       // Resume existing producer
       console.log('  ↩️ Resuming existing video producer');
       videoProducer.resume();
-      
+
       // Re-set track to store (in case it was cleared)
       const track = videoProducer.track;
       if (track) {
         useVoiceChatStore.getState().setLocalVideoTrack(track);
         console.log('  ✅ Video track restored to store');
       }
-      
+
       useVoiceChatStore.getState().setVideoEnabled(true);
     } else {
       // Create new producer
@@ -730,6 +784,15 @@ export class WebRTCService {
     }
   }
 
+  // Helper methods for managing consumers
+  getConsumers() {
+    return this.consumers;
+  }
+
+  removeConsumer(consumerId: string) {
+    this.consumers.delete(consumerId);
+  }
+
   // Close consumer
   closeConsumer(consumerId: string) {
     const consumer = this.consumers.get(consumerId);
@@ -739,13 +802,149 @@ export class WebRTCService {
     }
   }
 
+  // Start screen sharing
+  async startScreenShare(sourceId?: string) {
+    try {
+      if (!this.device || !this.sendTransport) {
+        throw new Error('Device or transport not ready');
+      }
+
+      console.log('🖥️ Starting screen share...');
+      let stream: MediaStream;
+
+      if (sourceId) {
+        // Electron: Use getUserMedia with chromeMediaSourceId
+        console.log(`🖥️ Using specific source ID: ${sourceId}`);
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false, // System audio sharing is tricky in Electron, disabling for now
+          video: {
+            // @ts-ignore - Electron specific constraints
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: sourceId,
+              minWidth: 1280,
+              maxWidth: 1920,
+              minHeight: 720,
+              maxHeight: 1080,
+            },
+          },
+        });
+      } else {
+        // Browser: Use standard getDisplayMedia
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30 },
+          },
+          audio: false,
+        });
+      }
+
+      const videoTrack = stream.getVideoTracks()[0];
+
+      // Handle stream ended (user clicked "Stop sharing" in browser UI)
+      videoTrack.onended = () => {
+        console.log('🖥️ Screen share track ended');
+        this.stopScreenShare();
+      };
+
+      // Produce the track
+      // IMPORTANT: Pass source: 'screen' so appData is set correctly!
+      await this.produce(videoTrack, 'screen');
+
+      // Update local state
+      const store = useVoiceChatStore.getState();
+      store.setLocalScreenTrack(videoTrack);
+      store.setScreenSharing(true); // ✅ Update UI state
+
+      // Create virtual participant for local screen share
+      // This makes the UI consistent - user sees their screen as a separate tile
+      // Find current user by checking for local tracks (only current user has them)
+      const currentUser = Array.from(store.participants.values()).find(
+        p => p.localAudioTrack !== null || p.localVideoTrack !== null
+      );
+      if (currentUser) {
+        const screenParticipant: any = {
+          ...currentUser, // Copy all fields from current user
+          userId: `screen-${currentUser.userId}`,
+          name: 'Màn hình của bạn',
+          isScreenSharing: true,
+          videoTrack: videoTrack,
+          audioTrack: undefined, // Screen share has no audio
+          isVideoEnabled: true,
+          isMuted: true,
+        };
+        store.addParticipant(screenParticipant);
+        console.log('  ✅ Created local screen share participant:', screenParticipant.userId);
+      }
+
+      console.log('✅ Screen share started');
+    } catch (error) {
+      console.error('❌ Error starting screen share:', error);
+      throw error;
+    }
+  }
+
+  // Stop screen sharing
+  async stopScreenShare() {
+    try {
+      console.log('🛑 Stopping screen share...');
+
+      // Find screen producer
+      const screenProducer = Array.from(this.producers.values()).find(p => p.appData.source === 'screen');
+
+      if (screenProducer) {
+        const producerId = screenProducer.id;
+
+        // Stop track
+        if (screenProducer.track) {
+          screenProducer.track.stop();
+        }
+
+        // Close producer (this will trigger 'transportclose' event on server)
+        screenProducer.close();
+        this.producers.delete(producerId);
+        console.log('  ✅ Screen producer closed:', producerId);
+
+        // Notify server explicitly to ensure remote peers are updated
+        const roomId = useVoiceChatStore.getState().currentRoom?.roomId;
+        if (roomId && socketService.isConnected()) {
+          console.log('  📡 Sending closeProducer signal to server...');
+          socketService.closeProducer(producerId)
+            .then(() => console.log('  ✅ Server confirmed producer closed'))
+            .catch(err => console.error('  ❌ Failed to notify server:', err));
+        }
+      }
+
+      // Update store
+      const store = useVoiceChatStore.getState();
+
+      // Remove local screen share virtual participant
+      const currentUser = Array.from(store.participants.values()).find(
+        p => p.localAudioTrack !== null || p.localVideoTrack !== null
+      );
+      if (currentUser) {
+        const screenParticipantId = `screen-${currentUser.userId}`;
+        store.removeParticipant(screenParticipantId);
+        console.log('  ✅ Removed local screen share participant:', screenParticipantId);
+      }
+
+      store.setLocalScreenTrack(null);
+      store.setScreenSharing(false);
+
+    } catch (error) {
+      console.error('❌ Error stopping screen share:', error);
+    }
+  }
+
   // Cleanup all
   async cleanup() {
     console.log('🧹 Cleaning up WebRTC resources...');
-    
+
     // Clear pending producers
     this.pendingProducers = [];
-    
+
     // Close all producers
     for (const producer of this.producers.values()) {
       producer.close();
@@ -770,7 +969,7 @@ export class WebRTCService {
     }
 
     this.currentRoomId = null;
-    
+
     console.log('✅ Cleanup complete');
   }
 
@@ -798,23 +997,9 @@ export class WebRTCService {
     const pending = [...this.pendingProducers];
     this.pendingProducers = []; // Clear queue
 
-    let successCount = 0;
-    let errorCount = 0;
-
-    for (const { producerId, userId, kind } of pending) {
-      try {
-        console.log(`📥 [${successCount + errorCount + 1}/${pending.length}] Processing producer ${producerId} (${kind}) from ${userId}`);
-        await this.consume(producerId, userId, kind);
-        successCount++;
-        console.log(`✅ [${successCount + errorCount}/${pending.length}] Successfully consumed ${producerId}`);
-      } catch (error) {
-        errorCount++;
-        console.error(`❌ [${successCount + errorCount}/${pending.length}] Error consuming pending producer ${producerId}:`, error);
-        console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
-      }
+    for (const { producerId, userId, kind, appData } of pending) {
+      await this.consume(producerId, userId, kind, appData);
     }
-
-    console.log(`✅ Finished consuming pending producers: ${successCount} success, ${errorCount} errors`);
   }
 }
 

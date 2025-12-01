@@ -58,9 +58,9 @@ class SocketService {
     const userStore = useUserStore.getState();
     const { userId, name, isStoreReady } = userStore;
 
-    console.log('🔍 Connect attempt - User store state:', { 
-      userId: userId?.substring(0, 8) + '...', 
-      name, 
+    console.log('🔍 Connect attempt - User store state:', {
+      userId: userId?.substring(0, 8) + '...',
+      name,
       isStoreReady,
       hasUserId: !!userId,
       hasName: !!name
@@ -68,12 +68,12 @@ class SocketService {
 
     // Check for both null/undefined AND empty string
     if (!userId || !name || userId.trim() === '' || name.trim() === '') {
-      console.error('❌ Cannot connect: userId or name missing/empty', { 
+      console.error('❌ Cannot connect: userId or name missing/empty', {
         userId: userId || '(empty)',
         name: name || '(empty)',
-        hasUserId: !!userId, 
+        hasUserId: !!userId,
         hasName: !!name,
-        isStoreReady 
+        isStoreReady
       });
       return;
     }
@@ -108,7 +108,7 @@ class SocketService {
     this.socket.on('connect', () => {
       console.log('✅ Connected to server');
       useVoiceChatStore.getState().setSocketConnected(true);
-      
+
       // Get initial data
       this.getRooms();
       this.getOnlineUsers();
@@ -117,7 +117,7 @@ class SocketService {
     this.socket.on('reconnect', (attemptNumber: number) => {
       console.log('🔄 Reconnected to server after', attemptNumber, 'attempts');
       useVoiceChatStore.getState().setSocketConnected(true);
-      
+
       // Get initial data after reconnect
       this.getRooms();
       this.getOnlineUsers();
@@ -152,7 +152,7 @@ class SocketService {
 
     this.socket.on('userJoined', (data: UserJoinedEvent) => {
       console.log('👋 User joined:', data);
-      
+
       // Add participant to the store
       const store = useVoiceChatStore.getState();
       store.addParticipant({
@@ -162,6 +162,12 @@ class SocketService {
         joinedAt: Date.now(),
         isHost: false,
         status: 'accepted' as any,
+        isMuted: false,
+        isVideoEnabled: false,
+        isScreenSharing: false,
+        localAudioTrack: null,
+        localVideoTrack: null,
+        localScreenTrack: null,
         producerIds: [],
         consumerIds: [],
       });
@@ -184,14 +190,14 @@ class SocketService {
 
     this.socket.on('callEnded', async (data: CallEndedEvent) => {
       console.log('📞 Call ended:', data);
-      
+
       // Show toast notification
       const { toast } = await import('sonner');
       toast.info(`${data.endedBy} đã kết thúc cuộc gọi`, {
         description: data.reason || 'Cuộc gọi đã kết thúc',
         duration: 4000,
       });
-      
+
       useVoiceChatStore.getState().leaveRoom();
     });
 
@@ -206,28 +212,82 @@ class SocketService {
     });
 
     this.socket.on('newProducer', async (data: NewProducerEvent) => {
-      console.log('🎥 New producer:', data);
-      
+      console.log('🎬 New producer available:', data);
+      const store = useVoiceChatStore.getState();
+      const currentRoom = store.currentRoom;
+
+      if (!currentRoom) {
+        console.log('❌ No current room, ignoring newProducer event');
+        return;
+      }
+
       // Dynamically import webrtcService to avoid circular dependency
       const { webrtcService } = await import('../lib/mediasoup');
-      
+
       // Consume the new producer
+      console.log(`📡 Consuming producer ${data.producerId} from user ${data.userId}`);
       try {
-        await webrtcService.consume(
-          data.producerId,
-          data.userId,
-          data.kind as 'audio' | 'video'
-        );
-        console.log('✅ Successfully consumed producer:', data.producerId);
+        await webrtcService.consume(data.producerId, data.userId, data.kind as 'audio' | 'video', data.appData);
+        console.log('✅ Successfully consumed producer');
       } catch (error) {
         console.error('❌ Error consuming producer:', error);
+      }
+    });
+
+    // Listen for producer closed events (e.g., when user stops screen share)
+    this.socket.on('producerClosed', async (data: { producerId: string; userId: string; kind: string }) => {
+      console.log('🛑 Producer closed:', data);
+      const store = useVoiceChatStore.getState();
+
+      // Dynamically import webrtcService to avoid circular dependency
+      const { webrtcService } = await import('../lib/mediasoup');
+
+      // Find and close the corresponding consumer
+      const consumers = webrtcService.getConsumers();
+      const consumer = Array.from(consumers.values()).find(
+        c => c.producerId === data.producerId
+      );
+
+      if (consumer) {
+        console.log(`  ✅ Closing consumer ${consumer.id} for closed producer ${data.producerId}`);
+        consumer.close();
+        webrtcService.removeConsumer(consumer.id);
+
+        // Update store - remove participant if it was a screen share
+        // Screen share virtual participants have ID like "screen-{userId}" (IMPORTANT: not userId-screen!)
+        const screenParticipantId = `screen-${data.userId}`;
+        const participant = store.participants.get(screenParticipantId);
+
+        console.log(`  🔍 Looking for screen participant: ${screenParticipantId}`);
+        console.log(`  📊 Current participants:`, Array.from(store.participants.keys()));
+
+        if (participant) {
+          console.log(`  🖥️ Removing screen share virtual participant: ${screenParticipantId}`);
+          store.removeParticipant(screenParticipantId);
+          console.log(`  ✅ Screen share participant removed successfully`);
+        } else {
+          console.log(`  ℹ️ Not a screen share, updating regular participant`);
+          // If it's not a screen share, update the regular participant
+          const regularParticipant = store.participants.get(data.userId);
+          if (regularParticipant) {
+            if (data.kind === 'video') {
+              regularParticipant.videoTrack = undefined;
+              regularParticipant.isVideoEnabled = false;
+            } else if (data.kind === 'audio') {
+              regularParticipant.audioTrack = undefined;
+            }
+            store.updateParticipant(data.userId, regularParticipant);
+          }
+        }
+      } else {
+        console.log(`  ⚠️ No consumer found for closed producer ${data.producerId}`);
       }
     });
 
     this.socket.on('participantMediaStateUpdated', (data: { userId: string; name: string; isMuted: boolean; isVideoEnabled: boolean }) => {
       console.log('🎙️📹 Participant media state updated:', data);
       const store = useVoiceChatStore.getState();
-      
+
       // Update participant's media state
       store.updateParticipant(data.userId, {
         isMuted: data.isMuted,
@@ -250,17 +310,17 @@ class SocketService {
     this.socket.on('incomingCallNew', (data: IncomingCallEventNew) => {
       console.log('📞 Incoming call (new):', data);
       const store = useVoiceChatStore.getState();
-      
+
       const incomingCall = {
         callId: data.callId,
         fromUserId: data.from,
         fromUserName: data.fromName,
         receivedAt: Date.now(),
       };
-      
+
       console.log('📞 Setting incoming call to store:', incomingCall);
       store.setIncomingCallNew(incomingCall);
-      
+
       // Verify it was set
       console.log('📞 Incoming call state after set:', store.incomingCallNew);
     });
@@ -268,11 +328,11 @@ class SocketService {
     this.socket.on('callAcceptedNew', (data: CallAcceptedEventNew) => {
       console.log('✅ Call accepted (new):', data);
       const store = useVoiceChatStore.getState();
-      
+
       // Clear outgoing call and timeout
       store.clearCallTimeout();
       store.setOutgoingCall(null);
-      
+
       // If room data is included, set it
       if (data.room) {
         store.setCurrentRoom(data.room);
@@ -282,11 +342,11 @@ class SocketService {
     this.socket.on('callRejectedNew', (data: CallRejectedEventNew) => {
       console.log('❌ Call rejected (new):', data);
       const store = useVoiceChatStore.getState();
-      
+
       // Clear outgoing call and timeout
       store.clearCallTimeout();
       store.setOutgoingCall(null);
-      
+
       // Show toast (dynamic import)
       import('sonner').then(({ toast }) => {
         toast.error(`Call rejected: ${data.reason}`);
@@ -296,12 +356,12 @@ class SocketService {
     this.socket.on('callCancelled', (data: CallCancelledEvent) => {
       console.log('🚫 Call cancelled:', data);
       const store = useVoiceChatStore.getState();
-      
+
       // Clear incoming call
       const incomingCall = store.incomingCallNew;
       if (incomingCall && incomingCall.callId === data.callId) {
         store.setIncomingCallNew(null);
-        
+
         // Show toast (dynamic import)
         import('sonner').then(({ toast }) => {
           toast.info('Call was cancelled');
@@ -312,11 +372,11 @@ class SocketService {
     this.socket.on('callTimeout', (data: CallTimeoutEvent) => {
       console.log('⏱️ Call timeout:', data);
       const store = useVoiceChatStore.getState();
-      
+
       // Clear outgoing call and timeout
       store.clearCallTimeout();
       store.setOutgoingCall(null);
-      
+
       // Show toast (dynamic import)
       import('sonner').then(({ toast }) => {
         toast.error('Call timed out - no answer');
@@ -340,7 +400,17 @@ class SocketService {
     });
   }
 
-  joinRoom(payload: JoinRoomPayload): Promise<{ success: boolean; room?: Room; error?: string }> {
+  joinRoom(payload: JoinRoomPayload): Promise<{
+    success: boolean;
+    room?: Room;
+    error?: string;
+    existingProducers?: Array<{
+      producerId: string;
+      userId: string;
+      kind: string;
+      appData: any;
+    }>;
+  }> {
     return new Promise((resolve) => {
       if (!this.socket) {
         resolve({ success: false, error: 'Not connected' });
@@ -536,14 +606,16 @@ class SocketService {
     });
   }
 
-  produce(roomId: string, transportId: string, kind: 'audio' | 'video', rtpParameters: any): Promise<any> {
+  produce(roomId: string, transportId: string, kind: 'audio' | 'video', rtpParameters: any, appData?: any): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.socket) {
         reject(new Error('Not connected'));
         return;
       }
 
-      this.socket.emit('produce', { roomId, transportId, kind, rtpParameters }, (response: any) => {
+      console.log('📤 [DEBUG] Sending produce to server with appData:', appData);
+
+      this.socket.emit('produce', { roomId, transportId, kind, rtpParameters, appData }, (response: any) => {
         if (response.error) {
           reject(new Error(response.error));
         } else {
@@ -582,6 +654,25 @@ class SocketService {
           reject(new Error(response.error));
         } else {
           resolve(response);
+        }
+      });
+    });
+  }
+
+  closeProducer(producerId: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket) {
+        reject(new Error('Not connected'));
+        return;
+      }
+
+      console.log('📡 [DEBUG] Calling closeProducer for:', producerId);
+
+      this.socket.emit('closeProducer', { producerId }, (response: any) => {
+        if (response && response.success) {
+          resolve(response);
+        } else {
+          reject(new Error(response ? response.error : 'Unknown error'));
         }
       });
     });

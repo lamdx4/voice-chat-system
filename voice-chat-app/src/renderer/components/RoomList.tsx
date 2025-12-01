@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useVoiceChatStore } from '@/stores/voiceChatStore';
 import { socketService } from '@/services/socket';
+import { webrtcService } from '@/lib/mediasoup';
 import { Users, Video, UserPlus } from 'lucide-react';
 import { RoomType } from '@/types';
 
@@ -12,8 +13,36 @@ export function RoomList() {
 
   const handleJoinRoom = async (roomId: string) => {
     const response = await socketService.joinRoom({ roomId });
+    console.log('📥 RoomList joinRoom response:', {
+      success: response.success,
+      hasRoom: !!response.room,
+      producersCount: response.existingProducers?.length || 0,
+      producers: response.existingProducers
+    });
+
     if (response.success && response.room) {
       useVoiceChatStore.getState().setCurrentRoom(response.room);
+
+      // Consume existing producers from response
+      if (response.existingProducers && response.existingProducers.length > 0) {
+        console.log(`🎬 Consuming ${response.existingProducers.length} existing producers...`);
+        for (const producer of response.existingProducers) {
+          console.log(`  📦 Producer:`, producer);
+          try {
+            await webrtcService.consume(
+              producer.producerId,
+              producer.userId,
+              producer.kind as 'audio' | 'video',
+              producer.appData
+            );
+            console.log(`  ✅ Consumed ${producer.kind} from ${producer.userId}`);
+          } catch (error) {
+            console.error('❌ Failed to consume producer:', producer.producerId, error);
+          }
+        }
+      } else {
+        console.log('⚠️ No existing producers to consume');
+      }
     }
   };
 

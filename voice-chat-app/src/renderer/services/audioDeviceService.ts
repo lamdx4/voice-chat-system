@@ -40,7 +40,7 @@ class AudioDeviceService {
       
       const devices = await navigator.mediaDevices.enumerateDevices();
       const audioInputs = devices
-        .filter(device => device.kind === 'audioinput')
+        .filter(device => device.kind === 'audioinput' && device.deviceId !== 'default' && device.deviceId !== 'communications')
         .map(device => ({
           deviceId: device.deviceId,
           groupId: device.groupId,
@@ -63,7 +63,7 @@ class AudioDeviceService {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const audioOutputs = devices
-        .filter(device => device.kind === 'audiooutput')
+        .filter(device => device.kind === 'audiooutput' && device.deviceId !== 'default' && device.deviceId !== 'communications')
         .map(device => ({
           deviceId: device.deviceId,
           groupId: device.groupId,

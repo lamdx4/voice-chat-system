@@ -27,8 +27,8 @@ import {
 } from '../types';
 
 class SocketHandler {
-  // Track producers per room: Map<roomId, Map<userId, {producerId, kind}[]>>
-  private roomProducers: Map<string, Map<string, Array<{producerId: string, kind: string}>>> = new Map();
+  // Track producers per room: Map<roomId, Map<userId, {producerId, kind, appData}[]>>
+  private roomProducers: Map<string, Map<string, Array<{ producerId: string, kind: string, appData?: any }>>> = new Map();
 
   initialize(io: Server): void {
     // Initialize CallManager
@@ -37,7 +37,7 @@ class SocketHandler {
     // Middleware to authenticate and extract user info
     io.use((socket, next) => {
       const { userId, name } = socket.handshake.auth;
-      
+
       console.log('🔐 Auth attempt:', { userId, name, from: socket.handshake.address });
 
       if (!userId || !name) {
@@ -48,7 +48,7 @@ class SocketHandler {
       // Attach user info to socket
       socket.data.userId = userId;
       socket.data.name = name;
-      
+
       console.log('✅ Auth success:', { userId, name });
       next();
     });
@@ -91,7 +91,7 @@ class SocketHandler {
       this.handleReactToMessage(socket, io);
       this.handleGetRooms(socket);
       this.handleGetOnlineUsers(socket);
-      
+
       // WebRTC handlers
       this.handleGetRouterRtpCapabilities(socket);
       this.handleCreateTransport(socket);
@@ -99,10 +99,11 @@ class SocketHandler {
       this.handleProduce(socket, io);
       this.handleConsume(socket);
       this.handleResumeConsumer(socket);
-      
+      this.handleCloseProducer(socket);
+
       // Media state handlers
       this.handleMediaStateChanged(socket, io);
-      
+
       this.handleDisconnect(socket, io);
     });
   }
@@ -144,21 +145,21 @@ class SocketHandler {
         if (roomType === RoomType.GROUP) {
           // Add host as participant
           await RoomManager.addParticipant(room.roomId, userId, name, socket.id);
-          
+
           // Update host's status
           await UserManager.setUserRoom(userId, room.roomId);
           await UserManager.setUserStatus(userId, UserStatus.IN_CALL);
-          
+
           console.log(`✅ Host ${name} auto-joined group call ${room.roomId}`);
 
           // If there are invited users, send invitations
           if (invitedUserIds && invitedUserIds.length > 0) {
             console.log(`📞 Sending group call invitations to ${invitedUserIds.length} users`);
-            
+
             for (const invitedUserId of invitedUserIds) {
               // Double-check user status to prevent race conditions
               const invitedUser = UserManager.getUser(invitedUserId);
-              
+
               if (!invitedUser) {
                 console.log(`  ⚠️ User ${invitedUserId} not found, skipping`);
                 continue;
@@ -204,7 +205,7 @@ class SocketHandler {
     });
   }
 
-  private handleJoinRoom(socket: Socket, io: Server): void {
+  private handleJoinRoom(socket: Socket, _io: Server): void {
     socket.on('joinRoom', async (payload: JoinRoomPayload, callback) => {
       try {
         const { userId, name } = socket.data;
@@ -213,7 +214,7 @@ class SocketHandler {
         console.log(`📥 User ${name} joining room ${roomId}`);
 
         const success = await RoomManager.addParticipant(roomId, userId, name, socket.id);
-        
+
         if (!success) {
           return callback({
             success: false,
@@ -243,21 +244,26 @@ class SocketHandler {
           socketId: socket.id,
         });
 
-        // Broadcast updated room list and online users (status changed)
-        this.broadcastRoomList(io);
-        this.broadcastOnlineUsers(io);
+        // Collect existing producers to send in callback
+        const existingProducers: Array<{
+          producerId: string;
+          userId: string;
+          kind: string;
+          appData: any;
+        }> = [];
 
-        // Send existing producers to the new user
         const roomProducers = this.roomProducers.get(roomId);
         if (roomProducers) {
+          console.log(`📦 Collecting existing producers for ${name}...`);
           for (const [producerUserId, producers] of roomProducers.entries()) {
             if (producerUserId !== userId) { // Don't send own producers
-              for (const {producerId, kind} of producers) {
-                console.log(`📤 Sending existing producer to ${name}:`, {producerId, kind, from: producerUserId});
-                socket.emit('newProducer', {
+              for (const { producerId, kind, appData } of producers) {
+                console.log(`  📦 Collecting producer: ${kind} from ${producerUserId}`);
+                existingProducers.push({
                   producerId,
                   userId: producerUserId,
                   kind,
+                  appData,
                 });
               }
             }
@@ -286,9 +292,12 @@ class SocketHandler {
           isVideoEnabled: false,
         });
 
+        console.log(`✅ Sending ${existingProducers.length} existing producers in callback to ${name}`);
+
         callback({
           success: true,
           room: this.serializeRoom(room),
+          existingProducers: existingProducers,
         });
       } catch (error: any) {
         console.error('Error joining room:', error);
@@ -333,7 +342,7 @@ class SocketHandler {
         console.log(`✅ User ${name} (${userId}) accepting call ${roomId}`);
 
         const success = await RoomManager.acceptCall(roomId, userId, name);
-        
+
         if (!success) {
           return callback({
             success: false,
@@ -381,7 +390,7 @@ class SocketHandler {
         console.log(`❌ User ${name} rejecting call ${roomId}`);
 
         const result = await RoomManager.rejectCall(roomId, userId);
-        
+
         if (!result.success) {
           return callback({
             success: false,
@@ -392,7 +401,7 @@ class SocketHandler {
         // For DIRECT calls, end the call and notify
         if (result.shouldEndCall) {
           console.log(`📞 Ending direct call ${roomId} - call rejected`);
-          
+
           // Notify remaining participant(s)
           io.to(roomId).emit('callEnded', {
             roomId,
@@ -655,7 +664,7 @@ class SocketHandler {
         console.log(`💬 User ${name} sending message to room ${roomId}`, replyTo ? '(replying)' : '');
 
         const message = await RoomManager.addMessage(roomId, userId, name, content, replyTo);
-        
+
         if (!message) {
           return callback({
             success: false,
@@ -689,7 +698,7 @@ class SocketHandler {
         console.log(`😀 User ${userId} reacting ${emoji} to message ${messageId}`);
 
         const message = await RoomManager.reactToMessage(roomId, messageId, userId, emoji);
-        
+
         if (!message) {
           return callback({
             success: false,
@@ -721,7 +730,7 @@ class SocketHandler {
     socket.on('getRooms', async (callback) => {
       try {
         const rooms = RoomManager.getGroupRooms();
-        
+
         callback({
           success: true,
           rooms: rooms.map(room => this.serializeRoom(room)),
@@ -740,7 +749,7 @@ class SocketHandler {
     socket.on('getOnlineUsers', async (callback) => {
       try {
         const users = UserManager.getAllOnlineUsers();
-        
+
         callback({
           success: true,
           users,
@@ -789,7 +798,7 @@ class SocketHandler {
         }
 
         const transport = await MediasoupService.createWebRtcTransport(router);
-        
+
         // Store transport
         TransportManager.addTransport(transport.id, transport);
 
@@ -860,15 +869,52 @@ class SocketHandler {
   private handleProduce(socket: Socket, _io: Server): void {
     socket.on('produce', async (payload: ProducePayload, callback) => {
       try {
-        const { roomId, transportId, kind, rtpParameters } = payload;
+        const { roomId, transportId, kind, rtpParameters, appData = {} } = payload;  // ✅ Extract appData
         const { userId, name } = socket.data;
+
+        console.log('📥 [DEBUG] Received produce with appData:', appData);
 
         const transport = TransportManager.getTransport(transportId);
         if (!transport) {
           throw new Error('Transport not found');
         }
 
-        const producer = await transport.produce({ kind, rtpParameters });
+        // ✅ Pass appData to producer
+        const producer = await transport.produce({ kind, rtpParameters, appData });
+
+        console.log('📥 [DEBUG] Producer created with appData:', producer.appData);
+
+        // Listen for producer close event (e.g., when user stops screen sharing)
+        producer.on('transportclose', () => {
+          console.log(`🚪 Producer ${producer.id} transport closed`);
+        });
+
+        // When producer is closed (e.g., stopScreenShare calls producer.close())
+        producer.observer.on('close', () => {
+          console.log(`🛑 Producer ${producer.id} (${kind}) closed for user ${userId}`);
+
+          // Remove from room tracking
+          const roomProducersMap = this.roomProducers.get(roomId);
+          if (roomProducersMap) {
+            const userProducers = roomProducersMap.get(userId);
+            if (userProducers) {
+              const index = userProducers.findIndex(p => p.producerId === producer.id);
+              if (index !== -1) {
+                userProducers.splice(index, 1);
+                console.log(`  ✅ Removed producer ${producer.id} from tracking`);
+              }
+            }
+          }
+
+          // Notify other participants that this producer is closed
+          console.log(`📢 Broadcasting producerClosed event to room ${roomId}`);
+          socket.to(roomId).emit('producerClosed', {
+            producerId: producer.id,
+            userId,
+            kind,
+          });
+          console.log(`✅ producerClosed event sent for producer ${producer.id}`);
+        });
 
         // Store producer in room participant
         const room = await RoomManager.getRoom(roomId);
@@ -884,21 +930,22 @@ class SocketHandler {
         // Save producer to tracking
         console.log(`🔍 Saving producer to roomProducers map...`);
         console.log(`  📊 roomProducers.has(${roomId}):`, this.roomProducers.has(roomId));
-        
+
         if (!this.roomProducers.has(roomId)) {
           console.log(`  📝 Creating new entry for room ${roomId}`);
           this.roomProducers.set(roomId, new Map());
         }
         const roomProducers = this.roomProducers.get(roomId)!;
-        
+
         console.log(`  📊 roomProducers.has(${userId}):`, roomProducers.has(userId));
         if (!roomProducers.has(userId)) {
           console.log(`  📝 Creating new array for user ${userId}`);
           roomProducers.set(userId, []);
         }
-        
-        roomProducers.get(userId)!.push({ producerId: producer.id, kind });
-        console.log(`💾 Saved producer for user ${userId} in room ${roomId}:`, { producerId: producer.id, kind });
+
+        // ✅ Store appData from producer (not from rtpParameters)
+        roomProducers.get(userId)!.push({ producerId: producer.id, kind, appData: producer.appData });
+        console.log(`💾 Saved producer for user ${userId} in room ${roomId}:`, { producerId: producer.id, kind, appData: producer.appData });
         console.log(`  📊 Total producers for user ${userId}:`, roomProducers.get(userId)!.length);
 
         // Notify other participants about new producer
@@ -908,6 +955,7 @@ class SocketHandler {
           producerId: producer.id,
           userId,
           kind,
+          appData: producer.appData,  // ✅ Send producer.appData (not payload appData)
         });
         console.log(`✅ newProducer event sent to room ${roomId}`);
 
@@ -921,6 +969,60 @@ class SocketHandler {
           success: false,
           error: error.message,
         });
+      }
+    });
+  }
+
+  private handleCloseProducer(socket: Socket): void {
+    socket.on('closeProducer', async (payload: { producerId: string }, callback) => {
+      try {
+        const { producerId } = payload;
+        const { userId } = socket.data;
+
+        console.log(`🛑 [DEBUG] Received closeProducer request for ${producerId} from ${userId}`);
+
+        // Find the room this user is in
+        let roomId: string | null = null;
+        let kind: string | null = null;
+
+        for (const [rid, roomProducersMap] of this.roomProducers.entries()) {
+          const userProducers = roomProducersMap.get(userId);
+          if (userProducers) {
+            const producerEntry = userProducers.find(p => p.producerId === producerId);
+            if (producerEntry) {
+              roomId = rid;
+              kind = producerEntry.kind;
+
+              // Remove from tracking
+              const index = userProducers.findIndex(p => p.producerId === producerId);
+              if (index !== -1) {
+                userProducers.splice(index, 1);
+                console.log(`  ✅ [DEBUG] Removed producer ${producerId} from tracking`);
+              }
+              break;
+            }
+          }
+        }
+
+        if (roomId && kind) {
+          // Broadcast to other participants
+          console.log(`  📢 [DEBUG] Broadcasting producerClosed to room ${roomId}`);
+          socket.to(roomId).emit('producerClosed', {
+            producerId,
+            userId,
+            kind,
+          });
+          console.log(`  ✅ [DEBUG] producerClosed event sent`);
+
+          callback({ success: true });
+        } else {
+          console.warn(`  ⚠️ [DEBUG] Producer ${producerId} not found in tracking`);
+          callback({ success: false, error: 'Producer not found' });
+        }
+
+      } catch (error: any) {
+        console.error('❌ Error in closeProducer:', error);
+        callback({ success: false, error: error.message });
       }
     });
   }
@@ -1086,7 +1188,7 @@ class SocketHandler {
       if (user && user.currentRoomId) {
         // User was in a room - leave and notify
         await this.userLeaveRoom(userId, user.currentRoomId, socket, io);
-        
+
         // Broadcast updated room list (important for group rooms)
         this.broadcastRoomList(io);
       }
@@ -1128,15 +1230,15 @@ class SocketHandler {
     // For DIRECT calls, end immediately and notify
     if (shouldEndCall) {
       console.log(`📞 Ending direct call ${roomId} - participant left`);
-      
+
       // IMPORTANT: Update leaving user's status FIRST (before endCall)
       await UserManager.setUserRoom(userId, undefined);
       await UserManager.setUserStatus(userId, UserStatus.IDLE);
       console.log(`✅ Set leaving user ${userId} to IDLE`);
-      
+
       // Leave socket room
       socket.leave(roomId);
-      
+
       // Notify remaining participant(s) before ending
       io.to(roomId).emit('callEnded', {
         roomId,
@@ -1171,11 +1273,11 @@ class SocketHandler {
     if (isHost && !room.isHostless) {
       setTimeout(async () => {
         const result = await RoomManager.checkHostGracePeriod(roomId);
-        
+
         // Broadcast updates if room state changed
         if (result.ended || result.hostless) {
           this.broadcastRoomList(io);
-          
+
           // Notify room participants about the change
           if (result.ended) {
             io.to(roomId).emit('callEnded', {
@@ -1184,7 +1286,7 @@ class SocketHandler {
               reason: 'Host disconnected and grace period expired',
             });
           }
-          
+
           if (result.hostless) {
             io.to(roomId).emit('roomHostless', {
               roomId,
@@ -1226,6 +1328,8 @@ class SocketHandler {
         joinedAt: p.joinedAt,
         isHost: p.isHost,
         status: p.status,
+        isMuted: p.isMuted,
+        isVideoEnabled: p.isVideoEnabled,
       })),
       createdAt: room.createdAt,
       isHostless: room.isHostless,

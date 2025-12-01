@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notifyIncomingCall: (callerName: string, callType: 'direct' | 'group') => 
     ipcRenderer.send('incoming-call', { callerName, callType }),
   showWindow: () => ipcRenderer.send('show-window'),
+  getScreenSources: (opts: any) => ipcRenderer.invoke('desktop-capturer-get-sources', opts),
 });
 
 // You can also expose Node.js APIs here if needed

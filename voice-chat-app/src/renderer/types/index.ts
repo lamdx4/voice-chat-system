@@ -42,13 +42,17 @@ export interface Participant {
   consumerTransportId?: string;
   producerIds: string[];
   consumerIds: string[];
-  // Client-side only
+  // Client-side only media state
   audioTrack?: MediaStreamTrack;
   videoTrack?: MediaStreamTrack;
   audioLevel?: number;
   isSpeaking?: boolean;
-  isMuted?: boolean;
-  isVideoEnabled?: boolean;
+  isMuted: boolean;
+  isVideoEnabled: boolean;
+  isScreenSharing: boolean;
+  localAudioTrack: MediaStreamTrack | null;
+  localVideoTrack: MediaStreamTrack | null;
+  localScreenTrack: MediaStreamTrack | null;
 }
 
 export interface MessageReaction {
@@ -217,6 +221,7 @@ export interface NewProducerEvent {
   producerId: string;
   userId: string;
   kind: 'audio' | 'video';
+  appData?: any;
 }
 
 export interface RoomListUpdatedEvent {

@@ -16,6 +16,8 @@ interface VoiceChatState {
   isVideoEnabled: boolean;
   localAudioTrack: MediaStreamTrack | null;
   localVideoTrack: MediaStreamTrack | null;
+  localScreenTrack: MediaStreamTrack | null;
+  isScreenSharing: boolean;
   
   // Participants with media tracks
   participants: Map<string, Participant>;
@@ -58,6 +60,8 @@ interface VoiceChatState {
   setVideoEnabled: (enabled: boolean) => void;
   setLocalAudioTrack: (track: MediaStreamTrack | null) => void;
   setLocalVideoTrack: (track: MediaStreamTrack | null) => void;
+  setLocalScreenTrack: (track: MediaStreamTrack | null) => void;
+  setScreenSharing: (isSharing: boolean) => void;
   
   // Actions - Incoming call (old)
   setIncomingCall: (call: IncomingCallEvent | null) => void;
@@ -82,6 +86,7 @@ const initialState = {
   isVideoEnabled: false,
   localAudioTrack: null,
   localVideoTrack: null,
+  localScreenTrack: null,
   participants: new Map<string, Participant>(),
   messages: [],
   incomingCall: null,
@@ -200,6 +205,14 @@ export const useVoiceChatStore = create<VoiceChatState>()(
         set({ localVideoTrack: track });
       },
 
+      setLocalScreenTrack: (track: MediaStreamTrack | null) => {
+        set({ localScreenTrack: track });
+      },
+
+      setScreenSharing: (isSharing: boolean) => {
+        set({ isScreenSharing: isSharing });
+      },
+
       setIncomingCall: (call: IncomingCallEvent | null) => {
         set({ incomingCall: call });
       },
@@ -232,8 +245,10 @@ export const useVoiceChatStore = create<VoiceChatState>()(
           messages: [],
           localAudioTrack: null,
           localVideoTrack: null,
+          localScreenTrack: null,
           isMuted: false,
           isVideoEnabled: false,
+          isScreenSharing: false,
         });
       },
 
