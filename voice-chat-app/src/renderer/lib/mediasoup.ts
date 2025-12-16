@@ -558,7 +558,7 @@ export class WebRTCService {
       console.log('🎤 Switching microphone to:', deviceId || 'default');
 
       // Find current audio producer
-      const audioProducer = Array.from(this.producers.values()).find(p => p.kind === 'audio');
+      const audioProducer = this.getAudioProducer();
       if (!audioProducer) {
         console.warn('⚠️ No audio producer found, cannot switch microphone');
         return;
@@ -630,8 +630,8 @@ export class WebRTCService {
     try {
       console.log('📹 Switching camera to:', deviceId || 'default');
 
-      // Find current video producer
-      const videoProducer = Array.from(this.producers.values()).find(p => p.kind === 'video');
+      // Find current video producer (camera only)
+      const videoProducer = this.getCameraProducer();
       if (!videoProducer) {
         console.warn('⚠️ No video producer found, cannot switch camera');
         return;
@@ -698,7 +698,7 @@ export class WebRTCService {
 
   // Mute/unmute audio
   muteAudio(muted: boolean) {
-    const audioProducer = Array.from(this.producers.values()).find(p => p.kind === 'audio');
+    const audioProducer = this.getAudioProducer();
     if (audioProducer) {
       if (muted) {
         audioProducer.pause();
@@ -919,7 +919,7 @@ export class WebRTCService {
       console.log('🛑 Stopping screen share...');
 
       // Find screen producer
-      const screenProducer = Array.from(this.producers.values()).find(p => p.appData.source === 'screen');
+      const screenProducer = this.getScreenProducer();
 
       if (screenProducer) {
         const producerId = screenProducer.id;
@@ -971,6 +971,61 @@ export class WebRTCService {
       console.error('❌ Error stopping screen share:', error);
     }
   }
+
+  async leaveRoom() {
+    console.log('👋 Leaving WebRTC room...');
+
+    // Close all producers
+    for (const producer of this.producers.values()) {
+      producer.close();
+    }
+    this.producers.clear();
+
+    // Close all consumers
+    for (const consumer of this.consumers.values()) {
+      consumer.close();
+    }
+    this.consumers.clear();
+
+    // Close transports
+    if (this.sendTransport) {
+      this.sendTransport.close();
+      this.sendTransport = null;
+    }
+
+    if (this.recvTransport) {
+      this.recvTransport.close();
+      this.recvTransport = null;
+    }
+
+    // Clear device
+    this.device = null;
+    this.currentRoomId = null;
+
+    console.log('✅ WebRTC cleanup complete');
+  }
+
+  // ===== HELPER METHODS FOR PRODUCER RETRIEVAL =====
+  // Centralized logic to avoid ambiguous .find() calls scattered throughout the code
+
+  private getCameraProducer() {
+    return Array.from(this.producers.values()).find(
+      p => p.kind === 'video' && p.appData.source !== 'screen'
+    );
+  }
+
+  private getScreenProducer() {
+    return Array.from(this.producers.values()).find(
+      p => p.kind === 'video' && p.appData.source === 'screen'
+    );
+  }
+
+  private getAudioProducer() {
+    return Array.from(this.producers.values()).find(
+      p => p.kind === 'audio'
+    );
+  }
+  // ===== END HELPER METHODS =====
 
   // Cleanup all
   async cleanup() {

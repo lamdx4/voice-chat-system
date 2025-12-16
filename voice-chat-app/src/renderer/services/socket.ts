@@ -235,7 +235,7 @@ class SocketService {
     });
 
     // Listen for producer closed events (e.g., when user stops screen share)
-    this.socket.on('producerClosed', async (data: { producerId: string; userId: string; kind: string }) => {
+    this.socket.on('producerClosed', async (data: { producerId: string; userId: string; kind: string; appData?: any }) => {
       console.log('🛑 Producer closed:', data);
       const store = useVoiceChatStore.getState();
 
@@ -253,21 +253,31 @@ class SocketService {
         consumer.close();
         webrtcService.removeConsumer(consumer.id);
 
-        // Update store - remove participant if it was a screen share
-        // Screen share virtual participants have ID like "screen-{userId}" (IMPORTANT: not userId-screen!)
-        const screenParticipantId = `screen-${data.userId}`;
-        const participant = store.participants.get(screenParticipantId);
+        // ✅ Reliable identification using appData.source (server-provided)
+        const isScreenShare = data.appData?.source === 'screen';
+        console.log(`  🔍 Producer type check: isScreenShare=${isScreenShare}, appData:`, data.appData);
+        console.log(`  📊 Full event data:`, JSON.stringify(data, null, 2));
 
-        console.log(`  🔍 Looking for screen participant: ${screenParticipantId}`);
-        console.log(`  📊 Current participants:`, Array.from(store.participants.keys()));
+        if (isScreenShare) {
+          // Remove virtual screen share participant
+          const screenParticipantId = `screen-${data.userId}`;
+          console.log(`  🖥️ Attempting to remove screen share virtual participant: ${screenParticipantId}`);
+          console.log(`  📋 Current participants before removal:`, Array.from(store.participants.keys()));
 
-        if (participant) {
-          console.log(`  🖥️ Removing screen share virtual participant: ${screenParticipantId}`);
-          store.removeParticipant(screenParticipantId);
-          console.log(`  ✅ Screen share participant removed successfully`);
+          const participantExists = store.participants.has(screenParticipantId);
+          console.log(`  ❓ Participant exists: ${participantExists}`);
+
+          if (participantExists) {
+            store.removeParticipant(screenParticipantId);
+            console.log(`  ✅ Screen share participant removed successfully`);
+            console.log(`  📋 Current participants after removal:`, Array.from(store.participants.keys()));
+          } else {
+            console.error(`  ❌ Screen share participant NOT FOUND: ${screenParticipantId}`);
+            console.error(`  📋 Available participants:`, Array.from(store.participants.entries()).map(([id, p]) => ({ id, name: p.name, isScreenSharing: p.isScreenSharing })));
+          }
         } else {
-          console.log(`  ℹ️ Not a screen share, updating regular participant`);
-          // If it's not a screen share, update the regular participant
+          // Update regular participant (camera/mic)
+          console.log(`  ℹ️ Regular media producer (camera/mic), updating participant`);
           const regularParticipant = store.participants.get(data.userId);
           if (regularParticipant) {
             if (data.kind === 'video') {

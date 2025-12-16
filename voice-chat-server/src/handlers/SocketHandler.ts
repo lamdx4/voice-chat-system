@@ -893,6 +893,9 @@ class SocketHandler {
         producer.observer.on('close', () => {
           console.log(`🛑 Producer ${producer.id} (${kind}) closed for user ${userId}`);
 
+          // ✅ CRITICAL: Capture appData BEFORE removing from tracking
+          const savedAppData = producer.appData;
+
           // Remove from room tracking
           const roomProducersMap = this.roomProducers.get(roomId);
           if (roomProducersMap) {
@@ -907,11 +910,12 @@ class SocketHandler {
           }
 
           // Notify other participants that this producer is closed
-          console.log(`📢 Broadcasting producerClosed event to room ${roomId}`);
+          console.log(`📢 Broadcasting producerClosed event to room ${roomId} with appData:`, savedAppData);
           socket.to(roomId).emit('producerClosed', {
             producerId: producer.id,
             userId,
             kind,
+            appData: savedAppData,  // ✅ Use saved appData (reliable)
           });
           console.log(`✅ producerClosed event sent for producer ${producer.id}`);
         });
@@ -984,6 +988,7 @@ class SocketHandler {
         // Find the room this user is in
         let roomId: string | null = null;
         let kind: string | null = null;
+        let savedAppData: any = undefined;  // ✅ Capture appData BEFORE removal
 
         for (const [rid, roomProducersMap] of this.roomProducers.entries()) {
           const userProducers = roomProducersMap.get(userId);
@@ -992,8 +997,9 @@ class SocketHandler {
             if (producerEntry) {
               roomId = rid;
               kind = producerEntry.kind;
+              savedAppData = producerEntry.appData;  // ✅ SAVE appData FIRST
 
-              // Remove from tracking
+              // NOW remove from tracking
               const index = userProducers.findIndex(p => p.producerId === producerId);
               if (index !== -1) {
                 userProducers.splice(index, 1);
@@ -1006,11 +1012,13 @@ class SocketHandler {
 
         if (roomId && kind) {
           // Broadcast to other participants
-          console.log(`  📢 [DEBUG] Broadcasting producerClosed to room ${roomId}`);
+          console.log(`  📢 [DEBUG] Broadcasting producerClosed to room ${roomId} with appData:`, savedAppData);
+
           socket.to(roomId).emit('producerClosed', {
             producerId,
             userId,
             kind,
+            appData: savedAppData,  // ✅ Use saved appData
           });
           console.log(`  ✅ [DEBUG] producerClosed event sent`);
 
