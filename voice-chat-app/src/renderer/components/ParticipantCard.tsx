@@ -39,6 +39,26 @@ export function ParticipantCard({
     }
   }, [name, isLocal]);
 
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const shouldShowVideo = isLocal
+    ? (videoTrack || isVideoEnabled)  // Local: show if has track OR enabled (for timing)
+    : (videoTrack && isVideoEnabled !== false);  // Remote: show only if has track AND not disabled
+
+  console.log(`🎬 ${name} RENDER:`, {
+    hasVideoTrack: !!videoTrack,
+    isVideoEnabled,
+    isLocal,
+    shouldShowVideo
+  });
+
   // Listen for device changes
   useEffect(() => {
     const handleDeviceChange = () => {
@@ -66,8 +86,12 @@ export function ParticipantCard({
       }).catch(err => {
         console.error(`❌ Error playing video for ${name}:`, err);
       });
+    } else if (videoRef.current) {
+      // Cleanup: Remove srcObject when videoTrack is removed/disabled
+      console.log(`🧹 Cleaning up video srcObject for ${name}`);
+      videoRef.current.srcObject = null;
     }
-  }, [videoTrack, name]);
+  }, [videoTrack, name, shouldShowVideo]);
 
   useEffect(() => {
     console.log(`🎙️ ParticipantCard ${name} - audioTrack:`, audioTrack, 'isLocal:', isLocal);
@@ -184,25 +208,7 @@ export function ParticipantCard({
     };
   }, [audioTrack, isLocal, name]);
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
 
-  const shouldShowVideo = isLocal
-    ? (videoTrack || isVideoEnabled)  // Local: show if has track OR enabled (for timing)
-    : (videoTrack && isVideoEnabled !== false);  // Remote: show only if has track AND not disabled
-
-  console.log(`🎬 ${name} RENDER:`, {
-    hasVideoTrack: !!videoTrack,
-    isVideoEnabled,
-    isLocal,
-    shouldShowVideo
-  });
 
   return (
     <Card className="relative overflow-hidden shadow-lg border-2 w-full h-full">

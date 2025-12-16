@@ -53,6 +53,7 @@ export interface Participant {
   localAudioTrack: MediaStreamTrack | null;
   localVideoTrack: MediaStreamTrack | null;
   localScreenTrack: MediaStreamTrack | null;
+  isLocal?: boolean;
 }
 
 export interface MessageReaction {
@@ -185,7 +186,7 @@ export interface IncomingCallEvent {
   fromUserName: string;
 }
 
-export interface IncomingCallEventNew extends IncomingCallEvent {}
+export interface IncomingCallEventNew extends IncomingCallEvent { }
 
 export interface UserJoinedEvent {
   userId: string;
@@ -215,7 +216,7 @@ export interface CallEndedEvent {
   reason?: string;
 }
 
-export interface NewMessageEvent extends ChatMessage {}
+export interface NewMessageEvent extends ChatMessage { }
 
 export interface NewProducerEvent {
   producerId: string;

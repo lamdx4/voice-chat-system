@@ -803,7 +803,7 @@ export class WebRTCService {
   }
 
   // Start screen sharing
-  async startScreenShare(sourceId?: string) {
+  async startScreenShare(userId: string, sourceId?: string) {
     try {
       if (!this.device || !this.sendTransport) {
         throw new Error('Device or transport not ready');
@@ -860,23 +860,38 @@ export class WebRTCService {
 
       // Create virtual participant for local screen share
       // This makes the UI consistent - user sees their screen as a separate tile
-      // Find current user by checking for local tracks (only current user has them)
-      const currentUser = Array.from(store.participants.values()).find(
-        p => p.localAudioTrack !== null || p.localVideoTrack !== null
-      );
+      // Use the explicitly passed userId to find the correct base participant
+      const currentUser = store.participants.get(userId);
+
+      // If found, create the virtual participant
       if (currentUser) {
         const screenParticipant: any = {
           ...currentUser, // Copy all fields from current user
-          userId: `screen-${currentUser.userId}`,
+          userId: `screen-${userId}`, // Create distinct ID
           name: 'Màn hình của bạn',
           isScreenSharing: true,
           videoTrack: videoTrack,
           audioTrack: undefined, // Screen share has no audio
           isVideoEnabled: true,
           isMuted: true,
+          isLocal: true // Mark as local
         };
         store.addParticipant(screenParticipant);
         console.log('  ✅ Created local screen share participant:', screenParticipant.userId);
+      } else {
+        // Fallback if current user not in store (shouldn't happen usually)
+        console.warn(`Could not find current user ${userId} in participants store, creating barebones screen participant`);
+        const screenParticipant: any = {
+          userId: `screen-${userId}`,
+          name: 'Màn hình của bạn',
+          isScreenSharing: true,
+          videoTrack: videoTrack,
+          isVideoEnabled: true,
+          isMuted: true,
+          isLocal: true
+        };
+        store.addParticipant(screenParticipant);
+        console.log('  ✅ Created fallback local screen share participant:', screenParticipant.userId);
       }
 
       console.log('✅ Screen share started');
@@ -921,13 +936,20 @@ export class WebRTCService {
       const store = useVoiceChatStore.getState();
 
       // Remove local screen share virtual participant
-      const currentUser = Array.from(store.participants.values()).find(
-        p => p.localAudioTrack !== null || p.localVideoTrack !== null
+      // We know the current user's ID from the store (though not passed explicitly here, we can infer safe from local tracks)
+      // BUT better to rely on known ID pattern.
+      // Since we don't have userId passed here, we iterate to find the one with isLocal=true AND isScreenSharing=true
+      // This is safer than finding "the user with local tracks" which might be ambiguous or fail if tracks are stopped.
+
+      const localScreenParticipant = Array.from(store.participants.values()).find(
+        p => p.isLocal && p.isScreenSharing && p.userId.startsWith('screen-')
       );
-      if (currentUser) {
-        const screenParticipantId = `screen-${currentUser.userId}`;
-        store.removeParticipant(screenParticipantId);
-        console.log('  ✅ Removed local screen share participant:', screenParticipantId);
+
+      if (localScreenParticipant) {
+        store.removeParticipant(localScreenParticipant.userId);
+        console.log('  ✅ Removed local screen share participant:', localScreenParticipant.userId);
+      } else {
+        console.warn('  ⚠️ Could not find local screen share participant to remove');
       }
 
       store.setLocalScreenTrack(null);

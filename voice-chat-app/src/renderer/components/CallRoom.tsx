@@ -38,7 +38,7 @@ export function CallRoom() {
   const setVideoEnabled = useVoiceChatStore((state) => state.setVideoEnabled);
   const isScreenSharing = useVoiceChatStore((state) => state.isScreenSharing);
   const leaveRoom = useVoiceChatStore((state) => state.leaveRoom);
-  
+
   const currentUserId = useUserStore((state) => state.userId);
   const currentUserName = useUserStore((state) => state.name);
 
@@ -56,26 +56,26 @@ export function CallRoom() {
 
     try {
       console.log('🚀 Initializing call for room:', currentRoom.roomId);
-      
+
       // Initialize WebRTC device
       console.log('📡 Step 1: Initialize mediasoup device...');
       await webrtcService.initializeDevice(currentRoom.roomId);
       console.log('✅ Device initialized');
-      
+
       // Create transports
       console.log('🚂 Step 2: Create send transport...');
       await webrtcService.createSendTransport(currentRoom.roomId);
       console.log('✅ Send transport created');
-      
+
       console.log('🚃 Step 3: Create receive transport...');
       await webrtcService.createRecvTransport(currentRoom.roomId);
       console.log('✅ Receive transport created');
-      
+
       // Get user media
       console.log('🎤 Step 4: Get user media (audio)...');
       const stream = await webrtcService.getUserMedia(true, false);
       console.log('✅ Got media stream:', stream.getTracks());
-      
+
       // Produce audio
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) {
@@ -88,7 +88,7 @@ export function CallRoom() {
 
       setIsInitialized(true);
       console.log('✅✅✅ Call initialized successfully');
-      
+
       // Consume any producers that were queued while we were initializing
       console.log('🔄 Consuming pending producers...');
       await webrtcService.consumePendingProducers();
@@ -106,12 +106,12 @@ export function CallRoom() {
 
   useEffect(() => {
     // Socket is managed at App level, so it's always connected here
-    console.log('🔄 CallRoom useEffect:', { 
-      hasRoom: !!currentRoom, 
-      isInitialized, 
-      roomId: currentRoom?.roomId 
+    console.log('🔄 CallRoom useEffect:', {
+      hasRoom: !!currentRoom,
+      isInitialized,
+      roomId: currentRoom?.roomId
     });
-    
+
     if (currentRoom && !isInitialized) {
       console.log('🎬 Starting call initialization...');
       initializeCall();
@@ -135,7 +135,7 @@ export function CallRoom() {
     const newMuted = !isMuted;
     webrtcService.muteAudio(newMuted);
     setMuted(newMuted);
-    
+
     // Broadcast media state to other participants
     if (currentRoom) {
       await socketService.updateMediaState(currentRoom.roomId, newMuted, isVideoEnabled);
@@ -144,7 +144,7 @@ export function CallRoom() {
 
   const handleToggleVideo = async () => {
     const newVideoEnabled = !isVideoEnabled;
-    
+
     try {
       if (newVideoEnabled) {
         // Start or resume video
@@ -153,9 +153,9 @@ export function CallRoom() {
         // Stop video completely (stop track and close producer)
         await webrtcService.stopVideo();
       }
-      
+
       setVideoEnabled(newVideoEnabled);
-      
+
       // Broadcast media state to other participants
       if (currentRoom) {
         await socketService.updateMediaState(currentRoom.roomId, isMuted, newVideoEnabled);
@@ -183,7 +183,7 @@ export function CallRoom() {
     } else {
       // Web browser - use standard API
       try {
-        await webrtcService.startScreenShare();
+        await webrtcService.startScreenShare(currentUserId);
       } catch (error) {
         console.error("Failed to start screen share:", error);
       }
@@ -193,7 +193,7 @@ export function CallRoom() {
   const handleScreenShareSelect = async (sourceId: string) => {
     setIsScreenShareModalOpen(false);
     try {
-      await webrtcService.startScreenShare(sourceId);
+      await webrtcService.startScreenShare(currentUserId, sourceId);
     } catch (error) {
       console.error("Failed to start screen share with source:", error);
     }
@@ -391,9 +391,9 @@ export function CallRoom() {
 
                 <Separator orientation="vertical" className="h-8" />
 
-                <Button 
-                  variant="destructive" 
-                  size="lg" 
+                <Button
+                  variant="destructive"
+                  size="lg"
                   onClick={handleLeaveCall}
                   className="gap-2"
                 >
@@ -483,7 +483,7 @@ const ParticipantCard = React.memo(({
       const stream = new MediaStream([videoTrack]);
       videoRef.current.srcObject = stream;
       console.log(`✅ Video track attached for ${name}`);
-      
+
       // Explicitly play video (autoplay may not work)
       videoRef.current.play().then(() => {
         console.log(`✅ Video playing for ${name}`);
@@ -496,74 +496,74 @@ const ParticipantCard = React.memo(({
 
   useEffect(() => {
     console.log(`🎙️ ParticipantCard ${name} - audioTrack:`, audioTrack, 'isLocal:', isLocal);
-    
+
     // Cleanup previous audio context
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
-    
+
     if (audioRef.current && audioTrack && !isLocal) {
       const stream = new MediaStream([audioTrack]);
       audioRef.current.srcObject = stream;
       audioRef.current.volume = 1.0; // Max volume
       audioRef.current.muted = false; // Ensure not muted
       console.log(`🔊 Audio element - volume: ${audioRef.current.volume}, muted: ${audioRef.current.muted}`);
-      console.log(`  📊 Stream tracks:`, stream.getTracks().map(t => ({kind: t.kind, enabled: t.enabled, readyState: t.readyState})));
-      
+      console.log(`  📊 Stream tracks:`, stream.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })));
+
       audioRef.current.play().then(async () => {
         console.log(`✅ Audio playing for ${name}`);
         console.log(`  📊 Audio state - paused: ${audioRef.current?.paused}, volume: ${audioRef.current?.volume}, readyState: ${audioRef.current?.readyState}`);
-        
+
         // Check if audio is actually playing by monitoring audio levels
         const audioContext = new AudioContext();
         audioContextRef.current = audioContext;
-        
+
         console.log(`  📊 AudioContext state: ${audioContext.state}`);
-        
+
         // Resume AudioContext if suspended (autoplay policy)
         if (audioContext.state === 'suspended') {
           console.log(`  ▶️ Resuming suspended AudioContext...`);
           await audioContext.resume();
           console.log(`  ✅ AudioContext resumed, new state: ${audioContext.state}`);
         }
-        
+
         const source = audioContext.createMediaStreamSource(stream);
         const analyzer = audioContext.createAnalyser();
         analyzer.fftSize = 256;
         source.connect(analyzer);
-        
+
         // IMPORTANT: Also connect to destination to ensure audio plays
         source.connect(audioContext.destination);
         console.log(`🔊 Audio routed to speakers via Web Audio API for ${name}`);
-        
+
         const dataArray = new Uint8Array(analyzer.frequencyBinCount);
         let checkCount = 0;
-        
+
         const checkAudio = () => {
           checkCount++;
           analyzer.getByteFrequencyData(dataArray);
           const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
           const max = Math.max(...dataArray);
-          
+
           // Also check track state
           const track = stream.getAudioTracks()[0];
           console.log(`📊 [Check ${checkCount}] Track state: enabled=${track.enabled}, readyState=${track.readyState}, muted=${track.muted}`);
           console.log(`📊 [Check ${checkCount}] Audio levels - average: ${average.toFixed(2)}, max: ${max}`);
-          
+
           if (average > 0 || max > 0) {
             console.log(`🔊 Audio detected for ${name}! Level: ${average.toFixed(2)}, Max: ${max}`);
           } else {
             console.log(`🔇 No audio detected for ${name} (track is ${track.readyState}, but silent)`);
           }
         };
-        
+
         // Check multiple times over 5 seconds
         setTimeout(checkAudio, 1000);
         setTimeout(checkAudio, 2000);
         setTimeout(checkAudio, 3000);
         setTimeout(checkAudio, 5000);
-        
+
         // Continuous monitoring for 10 seconds to catch any audio spikes
         let monitorCount = 0;
         monitorIntervalRef.current = setInterval(() => {
@@ -571,7 +571,7 @@ const ParticipantCard = React.memo(({
           analyzer.getByteFrequencyData(dataArray);
           const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
           const max = Math.max(...dataArray);
-          
+
           if (average > 1 || max > 5) {
             console.log(`🎤 AUDIO SPIKE DETECTED for ${name}! avg: ${average.toFixed(2)}, max: ${max}`);
             if (monitorIntervalRef.current) {
@@ -579,7 +579,7 @@ const ParticipantCard = React.memo(({
               monitorIntervalRef.current = null;
             }
           }
-          
+
           if (monitorCount >= 50) { // 50 * 200ms = 10 seconds
             console.log(`⏱️ Audio monitoring stopped for ${name} after 10 seconds`);
             if (monitorIntervalRef.current) {
@@ -592,7 +592,7 @@ const ParticipantCard = React.memo(({
         console.error(`❌ Error playing audio for ${name}:`, err);
       });
     }
-    
+
     return () => {
       // Cleanup on unmount
       if (audioContextRef.current) {
@@ -664,7 +664,7 @@ const ParticipantCard = React.memo(({
                 </Badge>
               )}
             </div>
-            
+
             {/* Icons section - fixed width, no overflow */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {/* Video state indicator */}
@@ -673,7 +673,7 @@ const ParticipantCard = React.memo(({
                   <VideoOff className="w-3.5 h-3.5 text-white" />
                 </div>
               )}
-              
+
               {/* Audio state indicator */}
               {isMuted ? (
                 <div className="bg-red-500 rounded-full p-1.5 shadow-lg">
