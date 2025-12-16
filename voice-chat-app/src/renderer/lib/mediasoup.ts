@@ -711,7 +711,11 @@ export class WebRTCService {
 
   // Enable/disable video
   enableVideo(enabled: boolean) {
-    const videoProducer = Array.from(this.producers.values()).find(p => p.kind === 'video');
+    // Only target camera video producers, not screen share
+    const videoProducer = Array.from(this.producers.values()).find(
+      p => p.kind === 'video' && p.appData.source !== 'screen'
+    );
+
     if (videoProducer) {
       if (enabled) {
         videoProducer.resume();
@@ -725,7 +729,11 @@ export class WebRTCService {
   // Stop video and close producer
   async stopVideo() {
     console.log('🛑 Stopping video...');
-    const videoProducer = Array.from(this.producers.values()).find(p => p.kind === 'video');
+    // Only target camera video producers, not screen share
+    const videoProducer = Array.from(this.producers.values()).find(
+      p => p.kind === 'video' && p.appData.source !== 'screen'
+    );
+
     if (videoProducer) {
       // Get and stop the track
       const track = videoProducer.track;
@@ -748,7 +756,11 @@ export class WebRTCService {
   // Resume or start video
   async resumeOrStartVideo() {
     console.log('▶️ Resuming or starting video...');
-    const videoProducer = Array.from(this.producers.values()).find(p => p.kind === 'video');
+
+    // Only target camera video producers, not screen share
+    const videoProducer = Array.from(this.producers.values()).find(
+      p => p.kind === 'video' && p.appData.source !== 'screen'
+    );
 
     if (videoProducer && !videoProducer.closed) {
       // Resume existing producer
